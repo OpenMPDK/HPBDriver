@@ -1,0 +1,4227 @@
+diff -urN iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/Kconfig iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/Kconfig
+--- iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/Kconfig	2018-06-27 16:36:27.213891989 +0900
++++ iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/Kconfig	2018-06-27 16:55:41.805891896 +0900
+@@ -3,6 +3,7 @@
+ #
+ # This code is based on drivers/scsi/ufs/Kconfig
+ # Copyright (C) 2011-2013 Samsung India Software Operations
++# Copyright (c) 2017-2018 Samsung Electronics Co., Ltd.
+ #
+ # Authors:
+ #	Santosh Yaraganavi <santosh.sy@samsung.com>
+@@ -94,6 +95,12 @@
+ 	  If you have a controller with this interface, say Y here.
+ 
+ 	  If unsure, say N.
++ 
++config UFSHPB
++	bool "UFSHPB (EXPERIMENTAL)"
++	depends on SCSI_UFSHCD
++	---help---
++	UFSHPB v1.0 test driver
+ 
+ choice
+ 	prompt "Option for self-test failure"
+diff -urN iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/Makefile iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/Makefile
+--- iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/Makefile	2018-06-27 16:36:27.213891989 +0900
++++ iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/Makefile	2018-06-27 16:55:27.693891897 +0900
+@@ -1,5 +1,6 @@
+ # UFSHCD makefile
+ obj-$(CONFIG_SCSI_UFSHCD) += ufshcd.o ufs_quirks.o
++obj-$(CONFIG_UFSHPB) += ufshpb.o
+ obj-$(CONFIG_SCSI_UFSHCD_PCI) += ufshcd-pci.o
+ obj-$(CONFIG_SCSI_UFSHCD_PLATFORM) += ufshcd-pltfrm.o
+ obj-$(CONFIG_SCSI_UFS_EXYNOS) += ufs-exynos.o
+diff -urN iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufs.h iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufs.h
+--- iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufs.h	2018-06-27 16:36:27.213891989 +0900
++++ iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufs.h	2018-06-27 16:55:41.805891896 +0900
+@@ -3,6 +3,7 @@
+  *
+  * This code is based on drivers/scsi/ufs/ufs.h
+  * Copyright (C) 2011-2013 Samsung India Software Operations
++ * Copyright (c) 2017-2018 Samsung Electronics Co., Ltd.
+  *
+  * Authors:
+  *	Santosh Yaraganavi <santosh.sy@samsung.com>
+@@ -72,6 +73,16 @@
+ 	UFS_UPIU_RPMB_WLUN		= 0xC4,
+ };
+ 
++/**
++ * ufs_is_valid_unit_desc_lun - checks if the given LUN has a unit descriptor
++ * @lun: LU number to check
++ * @return: true if the lun has a matching unit descriptor, false otherwise
++ */
++static inline bool ufs_is_valid_unit_desc_lun(u8 lun)
++{
++	return (lun == UFS_UPIU_RPMB_WLUN || (lun < UFS_UPIU_MAX_GENERAL_LUN));
++}
++
+ /*
+  * UFS Protocol Information Unit related definitions
+  */
+@@ -129,9 +140,15 @@
+ 
+ /* Flag idn for Query Requests*/
+ enum flag_idn {
+-	QUERY_FLAG_IDN_FDEVICEINIT      = 0x01,
+-	QUERY_FLAG_IDN_PWR_ON_WPE	= 0x03,
+-	QUERY_FLAG_IDN_BKOPS_EN         = 0x04,
++	QUERY_FLAG_IDN_FDEVICEINIT      	= 0x01,
++	QUERY_FLAG_IDN_PERMANENT_WPE		= 0x02,
++	QUERY_FLAG_IDN_PWR_ON_WPE			= 0x03,
++	QUERY_FLAG_IDN_BKOPS_EN 			= 0x04,
++	QUERY_FLAG_IDN_RESERVED1			= 0x05,
++	QUERY_FLAG_IDN_PURGE_ENABLE 		= 0x06,
++	QUERY_FLAG_IDN_RESERVED2			= 0x07,
++	QUERY_FLAG_IDN_FPHYRESOURCEREMOVAL	= 0x08,
++	QUERY_FLAG_IDN_BUSY_RTC 			= 0x09,
+ };
+ 
+ /* Attribute idn for Query requests */
+@@ -181,13 +198,13 @@
+ 	QUERY_DESC_DEVICE_MAX_SIZE		= 0x40,
+ 	QUERY_DESC_CONFIGURAION_MAX_SIZE	= 0x90,
+ 	QUERY_DESC_UNIT_MAX_SIZE		= 0x23,
++	QUERY_DESC_GEOMETRY_MAX_SIZE	= 0x44,
+ 	QUERY_DESC_INTERCONNECT_MAX_SIZE	= 0x06,
+ 	/*
+ 	 * Max. 126 UNICODE characters (2 bytes per character) plus 2 bytes
+ 	 * of descriptor header.
+ 	 */
+ 	QUERY_DESC_STRING_MAX_SIZE		= 0xFE,
+-	QUERY_DESC_GEOMETRY_MAZ_SIZE		= 0x44,
+ 	QUERY_DESC_POWER_MAX_SIZE		= 0x62,
+ 	QUERY_DESC_HEALTH_MAX_SIZE		= 0x37,
+ 	QUERY_DESC_RFU_MAX_SIZE			= 0x00,
+@@ -211,6 +228,11 @@
+ 	UNIT_DESC_PARAM_PHY_MEM_RSRC_CNT	= 0x18,
+ 	UNIT_DESC_PARAM_CTX_CAPABILITIES	= 0x20,
+ 	UNIT_DESC_PARAM_LARGE_UNIT_SIZE_M1	= 0x22,
++#if defined(CONFIG_UFSHPB)
++	UNIT_DESC_HPB_LU_MAX_ACTIVE_REGIONS		= 0x23,
++	UNIT_DESC_HPB_LU_PIN_REGION_START_OFFSET	= 0x25,
++	UNIT_DESC_HPB_LU_NUM_PIN_REGIONS		= 0x27,
++#endif
+ };
+ 
+ /*
+@@ -322,6 +344,20 @@
+ 	DEVICE_DESC_PARAM_UD_LEN		= 0x1B,
+ 	DEVICE_DESC_PARAM_RTT_CAP		= 0x1C,
+ 	DEVICE_DESC_PARAM_FRQ_RTC		= 0x1D,
++	DEVICE_DESC_PARAM_FEAT_SUP		= 0x1F,
++#if defined(CONFIG_UFSHPB)
++	DEVICE_DESC_PARAM_HPB_VER		= 0x40,
++#endif
++};
++
++enum geometry_desc_param {
++	GEOMETRY_DESC_SEGMENT_SIZE = 0x0D,
++#if defined(CONFIG_UFSHPB)
++	GEOMETRY_DESC_HPB_REGION_SIZE			= 0x48,
++	GEOMETRY_DESC_HPB_NUMBER_LU 			= 0x49,
++	GEOMETRY_DESC_HPB_SUBREGION_SIZE 		= 0x4A,
++	GEOMETRY_DESC_HPB_DEVICE_MAX_ACTIVE_REGIONS	= 0x4B,
++#endif
+ };
+ 
+ enum health_device_desc_param {
+diff -urN iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufshcd.c iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufshcd.c
+--- iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufshcd.c	2018-06-27 16:36:27.213891989 +0900
++++ iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufshcd.c	2018-06-27 16:55:41.805891896 +0900
+@@ -4,6 +4,7 @@
+  * This code is based on drivers/scsi/ufs/ufshcd.c
+  * Copyright (C) 2011-2013 Samsung India Software Operations
+  * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
++ * Copyright (c) 2017-2018 Samsung Electronics Co., Ltd.
+  *
+  * Authors:
+  *	Santosh Yaraganavi <santosh.sy@samsung.com>
+@@ -51,6 +52,7 @@
+ #include "unipro.h"
+ #include "ufs-exynos.h"
+ #include "ufs_quirks.h"
++#include <scsi/ufs/ioctl.h>
+ 
+ #if defined(CONFIG_UFS_FMP_ECRYPT_FS)
+ #include <fmp_derive_iv.h>
+@@ -113,7 +115,7 @@
+ 	QUERY_DESC_INTERCONNECT_MAX_SIZE,
+ 	QUERY_DESC_STRING_MAX_SIZE,
+ 	QUERY_DESC_RFU_MAX_SIZE,
+-	QUERY_DESC_GEOMETRY_MAZ_SIZE,
++	QUERY_DESC_GEOMETRY_MAX_SIZE,
+ 	QUERY_DESC_POWER_MAX_SIZE,
+ 	QUERY_DESC_HEALTH_MAX_SIZE,
+ 	QUERY_DESC_RFU_MAX_SIZE,
+@@ -126,13 +128,6 @@
+ 	UFSHCD_CAN_QUEUE	= 32,
+ };
+ 
+-/* UFSHCD states */
+-enum {
+-	UFSHCD_STATE_RESET,
+-	UFSHCD_STATE_ERROR,
+-	UFSHCD_STATE_OPERATIONAL,
+-};
+-
+ /* UFSHCD error handling flags */
+ enum {
+ 	UFSHCD_EH_IN_PROGRESS = (1 << 0),
+@@ -1513,9 +1508,19 @@
+ 	switch (lrbp->command_type) {
+ 	case UTP_CMD_TYPE_SCSI:
+ 		if (likely(lrbp->cmd)) {
++#if defined(CONFIG_UFSHPB)
++			if (hba->ufshpb_state == HPB_PRESENT
++			    && hba->issue_ioctl == true)
++				lrbp->lun = 0x7F;
++#endif
+ 			ufshcd_prepare_req_desc_hdr(lrbp, &upiu_flags,
+ 					lrbp->cmd->sc_data_direction);
+ 			ufshcd_prepare_utp_scsi_cmd_upiu(lrbp, upiu_flags);
++#if defined(CONFIG_UFSHPB)
++			if (hba->ufshpb_state == HPB_PRESENT
++			    && hba->issue_ioctl == false)
++				ufshpb_prep_fn(hba, lrbp);
++#endif
+ 		} else {
+ 			ret = -EINVAL;
+ 		}
+@@ -2041,13 +2046,19 @@
+ 	return err;
+ }
+ 
++#if defined(CONFIG_UFSHPB)
++int ufshcd_query_descriptor(struct ufs_hba *hba,
++		enum query_opcode opcode, u8 idn, u8 index,
++		u8 selector, u8 *desc_buf, int *buf_len)
++#else
+ static int ufshcd_query_descriptor(struct ufs_hba *hba,
+ 		enum query_opcode opcode, u8 idn, u8 index,
+ 		u8 selector, u8 *desc_buf, int *buf_len)
++#endif
+ {
+ 	struct ufs_query_req *request;
+ 	struct ufs_query_res *response;
+-	int err;
++	int err = 0;
+ 
+ 	BUG_ON(!hba);
+ 
+@@ -3382,7 +3393,6 @@
+ 	/* REPORT SUPPORTED OPERATION CODES is not supported */
+ 	sdev->no_report_opcodes = 1;
+ 
+-
+ 	ufshcd_set_queue_depth(sdev);
+ 
+ 	ufshcd_get_lu_power_on_wp_status(hba, sdev);
+@@ -3430,10 +3440,23 @@
+ static int ufshcd_slave_configure(struct scsi_device *sdev)
+ {
+ 	struct request_queue *q = sdev->request_queue;
++#if defined(CONFIG_UFSHPB)
++	struct ufs_hba *hba;
++#endif
+ 
+ 	blk_queue_update_dma_pad(q, PRDT_DATA_BYTE_COUNT_PAD - 1);
+ 	blk_queue_max_segment_size(q, PRDT_DATA_BYTE_COUNT_MAX);
+ 	blk_queue_update_dma_alignment(q, PAGE_SIZE - 1);
++#if defined(CONFIG_UFSHPB)
++	hba = shost_priv(sdev->host);
++
++	if (sdev->lun < UFS_UPIU_MAX_GENERAL_LUN) {
++		hba->sdev_ufs_lu[sdev->lun] = sdev;
++
++		printk("%s:%d: ufshpb set lun %d sdev %p q %p n",
++		       __func__, __LINE__, sdev->lun, sdev, sdev->request_queue);
++	}
++#endif
+ 
+ 	return 0;
+ }
+@@ -3569,6 +3592,11 @@
+ 			if (ufshcd_is_exception_event(lrbp->ucd_rsp_ptr) &&
+ 				scsi_host_in_recovery(hba->host))
+ 				schedule_work(&hba->eeh_work);
++#if defined(CONFIG_UFSHPB)
++			if (hba->ufshpb_state == HPB_PRESENT &&
++			    scsi_status == SAM_STAT_GOOD)
++				ufshpb_rsp_upiu(hba, lrbp);
++#endif
+ 			break;
+ 		case UPIU_TRANSACTION_REJECT_UPIU:
+ 			/* TODO: handle Reject UPIU Response */
+@@ -4319,10 +4347,17 @@
+ 		}
+ 	}
+ 	spin_lock_irqsave(host->host_lock, flags);
++#if defined(CONFIG_UFSHPB)
++	hba->ufshpb_state = HPB_RESET;
++#endif
+ 	__ufshcd_transfer_req_compl(hba, DID_RESET);
+ 	spin_unlock_irqrestore(host->host_lock, flags);
+ out:
+ 	if (!err) {
++#if defined(CONFIG_UFSHPB)
++		schedule_delayed_work(&hba->ufshpb_init_work,
++				      msecs_to_jiffies(10));
++#endif
+ 		err = SUCCESS;
+ 	} else {
+ 		dev_err(hba->dev, "%s: failed with err %d\n", __func__, err);
+@@ -4465,6 +4500,9 @@
+ 	hba->ufshcd_state = UFSHCD_STATE_RESET;
+ 	ufshcd_set_eh_in_progress(hba);
+ 	ufshcd_hba_stop(hba);
++#if defined(CONFIG_UFSHPB)
++	hba->ufshpb_state = HPB_RESET;
++#endif
+ 	spin_unlock_irqrestore(hba->host->host_lock, flags);
+ 
+ 	/* Establish the link again and restore the device */
+@@ -4795,7 +4833,6 @@
+ 	int re_cnt = 0;
+ 	int ret;
+ 	unsigned long flags;
+-
+ retry:
+ 	ret = ufshcd_hba_enable(hba);
+ 	if (ret)
+@@ -4894,6 +4931,11 @@
+ 		ufshcd_hba_exit(hba);
+ 	}
+ 
++#if defined(CONFIG_UFSHPB)
++	INIT_DELAYED_WORK(&hba->ufshpb_init_work, ufshpb_init_handler);
++	schedule_delayed_work(&hba->ufshpb_init_work, msecs_to_jiffies(0));
++#endif
++
+ 	return ret;
+ }
+ 
+@@ -4909,6 +4951,395 @@
+ 	ufshcd_probe_hba(hba);
+ }
+ 
++#if defined(CONFIG_UFSHPB)
++static void print_buf(unsigned char *buf)
++{
++	int i, max;
++
++	max = buf[0];
++
++	for (i = 0 ; i < max ; i++)  {
++		if (i % 16 == 0)
++			printk("(0x%.2x) :", i);
++		printk(" %.2x", buf[i]);
++
++		if ((i + 1) % 16 == 0)
++			printk("\n");
++	}
++
++	printk("\n");
++}
++
++static int ufshcd_query_desc_for_ufshpb(struct ufs_hba *hba, int lun,
++		struct ufs_ioctl_query_data *ioctl_data, void __user *buffer)
++{
++	unsigned char *kernel_buf;
++	int opcode, selector;
++	int err = 0;
++	int index = 0;
++	int length = 0;
++
++	opcode = ioctl_data->opcode & 0xffff;
++	selector = 1;
++
++	if (ioctl_data->idn == QUERY_DESC_IDN_STRING) {
++		kernel_buf = kzalloc(IOCTL_DEV_CTX_MAX_SIZE, GFP_KERNEL);
++	} else {
++		kernel_buf = kzalloc(QUERY_DESC_MAX_SIZE, GFP_KERNEL);
++	}
++
++	if (!kernel_buf) {
++		err = -ENOMEM;
++		goto out;
++	}
++
++	switch (opcode) {
++		case UPIU_QUERY_OPCODE_WRITE_DESC:
++			err = copy_from_user(kernel_buf, buffer +
++					sizeof(struct ufs_ioctl_query_data),
++					ioctl_data->buf_size);
++			printk("%s:%d bufsize %d\n", __func__, __LINE__,
++					ioctl_data->buf_size);
++			print_buf(kernel_buf);
++			if (err)
++				goto out_release_mem;
++			break;
++
++		case UPIU_QUERY_OPCODE_READ_DESC:
++			switch (ioctl_data->idn) {
++				case QUERY_DESC_IDN_UNIT:
++					if (!ufs_is_valid_unit_desc_lun(lun)) {
++						dev_err(hba->dev,
++								"%s: No unit descriptor for lun 0x%x\n",
++								__func__, lun);
++						err = -EINVAL;
++						goto out_release_mem;
++					}
++					index = lun;
++					printk("%s:%d read lu desc lun: %d\n",
++							__func__, __LINE__, index);
++					break;
++
++				case QUERY_DESC_IDN_STRING:
++					if (!ufs_is_valid_unit_desc_lun(lun)) {
++						dev_err(hba->dev,
++								"%s: No unit descriptor for lun 0x%x\n",
++								__func__, lun);
++						err = -EINVAL;
++						goto out_release_mem;
++					}
++					err = ufshpb_issue_req_dev_ctx(hba->ufshpb_lup[lun], kernel_buf, ioctl_data->buf_size);
++					if (err < 0)
++						goto out_release_mem;
++
++					goto copy_buffer;
++
++				case QUERY_DESC_IDN_DEVICE:
++				case QUERY_DESC_IDN_GEOMETRY:
++				case QUERY_DESC_IDN_CONFIGURAION:
++					break;
++
++				default:
++					printk("%s:%d invalid idn %d\n", __func__, __LINE__,
++							ioctl_data->idn);
++					err = -EINVAL;
++					goto out_release_mem;
++			}
++			break;
++		default:
++			err = -EINVAL;
++			printk("%s:%d invalid opcode %d\n", __func__, __LINE__,
++					opcode);
++			goto out_release_mem;
++	}
++
++	length = ioctl_data->buf_size;
++
++	err = ufshcd_query_descriptor(hba, opcode, ioctl_data->idn, index,
++			selector, kernel_buf, &length);
++	if (err)
++		goto out_release_mem;
++	printk("%s:%d (len 0x%x) %.2x %.2x %.2x %.2x : %.2x %.2x %.2x %.2x\n",
++			__func__, __LINE__, length,
++			kernel_buf[0], kernel_buf[1], kernel_buf[2], kernel_buf[3],
++			kernel_buf[4], kernel_buf[5], kernel_buf[6], kernel_buf[7]);
++
++copy_buffer:
++	if (opcode == UPIU_QUERY_OPCODE_READ_DESC) {
++		err = copy_to_user(buffer, ioctl_data,
++				sizeof(struct ufs_ioctl_query_data));
++		if (err)
++			printk("%s:%d Failed copying back to user.\n",
++					__func__, __LINE__);
++		err = copy_to_user(buffer + sizeof(struct ufs_ioctl_query_data),
++				kernel_buf, ioctl_data->buf_size);
++		if (err)
++			printk("%s:%d Failed copying back to user : rsp_buffer.\n",
++					__func__, __LINE__);
++	}
++
++out_release_mem:
++	kfree(kernel_buf);
++out:
++	return err;
++}
++#endif
++
++/**
++ * ufshcd_query_ioctl - perform user read queries
++ * @hba: per-adapter instance
++ * @lun: used for lun specific queries
++ * @buffer: user space buffer for reading and submitting query data and params
++ * @return: 0 for success negative error code otherwise
++ *
++ * Expected/Submitted buffer structure is struct ufs_ioctl_query_data.
++ * It will read the opcode, idn and buf_length parameters, and, put the
++ * response in the buffer field while updating the used size in buf_length.
++ */
++static int ufshcd_query_ioctl(struct ufs_hba *hba, u8 lun, void __user *buffer)
++{
++	struct ufs_ioctl_query_data *ioctl_data;
++	int err = 0;
++	int length = 0;
++	void *data_ptr;
++	bool flag;
++	u32 att;
++	u8 index;
++	u8 *desc = NULL;
++
++	ioctl_data = kzalloc(sizeof(struct ufs_ioctl_query_data), GFP_KERNEL);
++	if (!ioctl_data) {
++		dev_err(hba->dev, "%s: Failed allocating %zu bytes\n", __func__,
++				sizeof(struct ufs_ioctl_query_data));
++		err = -ENOMEM;
++		goto out;
++	}
++
++	/* extract params from user buffer */
++	err = copy_from_user(ioctl_data, buffer,
++			sizeof(struct ufs_ioctl_query_data));
++	if (err) {
++		dev_err(hba->dev,
++			"%s: Failed copying buffer from user, err %d\n",
++			__func__, err);
++		goto out_release_mem;
++	}
++
++#if defined(CONFIG_UFSHPB)
++	printk("UFS-IOCTL: op %u idn %u size %u \n",
++			ioctl_data->opcode,	ioctl_data->idn, ioctl_data->buf_size);
++	printk("%s:%d ufshpb code 0x%x opcode 0x%x\n",
++			__func__, __LINE__, ((ioctl_data->opcode & 0xffff0000) >> 16),
++			ioctl_data->opcode & 0xffff);
++
++	if ((ioctl_data->opcode & 0xffff0000) >> 16 == HPB_QUERY_OPCODE) {
++		err = ufshcd_query_desc_for_ufshpb(hba, lun, ioctl_data, buffer);
++		kfree(ioctl_data);
++		goto out;
++	}
++#endif
++
++	/* verify legal parameters & send query */
++	switch (ioctl_data->opcode) {
++	case UPIU_QUERY_OPCODE_READ_DESC:
++		switch (ioctl_data->idn) {
++		case QUERY_DESC_IDN_DEVICE:
++		case QUERY_DESC_IDN_CONFIGURAION:
++		case QUERY_DESC_IDN_INTERCONNECT:
++		case QUERY_DESC_IDN_GEOMETRY:
++		case QUERY_DESC_IDN_POWER:
++		case QUERY_DESC_IDN_HEALTH:
++			index = 0;
++			break;
++		case QUERY_DESC_IDN_UNIT:
++			if (!ufs_is_valid_unit_desc_lun(lun)) {
++				dev_err(hba->dev,
++					"%s: No unit descriptor for lun 0x%x\n",
++					__func__, lun);
++				err = -EINVAL;
++				goto out_release_mem;
++			}
++			index = lun;
++			printk("UFSTEST %s:%d index %d lun %d \n",
++					__func__, __LINE__, index, lun);
++			break;
++		default:
++			goto out_einval;
++		}
++		length = min_t(int, QUERY_DESC_MAX_SIZE,
++				ioctl_data->buf_size);
++		desc = kzalloc(length, GFP_KERNEL);
++		if (!desc) {
++			dev_err(hba->dev, "%s: Failed allocating %d bytes\n",
++					__func__, length);
++			err = -ENOMEM;
++			goto out_release_mem;
++		}
++		err = ufshcd_query_descriptor(hba, ioctl_data->opcode,
++				ioctl_data->idn, index, 0, desc, &length);
++		break;
++	case UPIU_QUERY_OPCODE_READ_ATTR:
++		switch (ioctl_data->idn) {
++		case QUERY_ATTR_IDN_BOOT_LU_EN:
++		case QUERY_ATTR_IDN_POWER_MODE:
++		case QUERY_ATTR_IDN_ACTIVE_ICC_LVL:
++		case QUERY_ATTR_IDN_OOO_DATA_EN:
++		case QUERY_ATTR_IDN_BKOPS_STATUS:
++		case QUERY_ATTR_IDN_PURGE_STATUS:
++		case QUERY_ATTR_IDN_MAX_DATA_IN:
++		case QUERY_ATTR_IDN_MAX_DATA_OUT:
++		case QUERY_ATTR_IDN_REF_CLK_FREQ:
++		case QUERY_ATTR_IDN_CONF_DESC_LOCK:
++		case QUERY_ATTR_IDN_MAX_NUM_OF_RTT:
++		case QUERY_ATTR_IDN_EE_CONTROL:
++		case QUERY_ATTR_IDN_EE_STATUS:
++		case QUERY_ATTR_IDN_SECONDS_PASSED:
++			index = 0;
++			break;
++		case QUERY_ATTR_IDN_DYN_CAP_NEEDED:
++		case QUERY_ATTR_IDN_CORR_PRG_BLK_NUM:
++			index = lun;
++			break;
++		default:
++			goto out_einval;
++		}
++		err = ufshcd_query_attr(hba, ioctl_data->opcode,
++					ioctl_data->idn, index, 0, &att);
++		printk("%s:%d query_attr opcode %d idn %d index %d att %u\n",
++				__func__, __LINE__, ioctl_data->opcode,
++				ioctl_data->idn, index, att);
++		break;
++	case UPIU_QUERY_OPCODE_READ_FLAG:
++		switch (ioctl_data->idn) {
++		case QUERY_FLAG_IDN_FDEVICEINIT:
++		case QUERY_FLAG_IDN_PERMANENT_WPE:
++		case QUERY_FLAG_IDN_PWR_ON_WPE:
++		case QUERY_FLAG_IDN_BKOPS_EN:
++		case QUERY_FLAG_IDN_PURGE_ENABLE:
++		case QUERY_FLAG_IDN_FPHYRESOURCEREMOVAL:
++		case QUERY_FLAG_IDN_BUSY_RTC:
++			break;
++		default:
++			goto out_einval;
++		}
++		err = ufshcd_query_flag(hba, ioctl_data->opcode,
++					ioctl_data->idn, &flag);
++		break;
++	default:
++		goto out_einval;
++	}
++
++	if (err) {
++		dev_err(hba->dev, "%s: Query for idn %d failed\n", __func__,
++					ioctl_data->idn);
++		goto out_release_mem;
++	}
++
++	/*
++	 * copy response data
++	 * As we might end up reading less data then what is specified in
++	 * "ioct_data->buf_size". So we are updating "ioct_data->
++	 * buf_size" to what exactly we have read.
++	 */
++	switch (ioctl_data->opcode) {
++	case UPIU_QUERY_OPCODE_READ_DESC:
++		ioctl_data->buf_size = min_t(int, ioctl_data->buf_size, length);
++		data_ptr = desc;
++		break;
++	case UPIU_QUERY_OPCODE_READ_ATTR:
++		ioctl_data->buf_size = sizeof(u32);
++		data_ptr = &att;
++		break;
++	case UPIU_QUERY_OPCODE_READ_FLAG:
++		ioctl_data->buf_size = 1;
++		data_ptr = &flag;
++		break;
++	default:
++		BUG_ON(true);
++	}
++
++	/* copy to user */
++	err = copy_to_user(buffer, ioctl_data,
++			sizeof(struct ufs_ioctl_query_data));
++	if (err)
++		dev_err(hba->dev, "%s: Failed copying back to user.\n",
++			__func__);
++	err = copy_to_user(buffer + sizeof(struct ufs_ioctl_query_data),
++			data_ptr, ioctl_data->buf_size);
++	if (err)
++		dev_err(hba->dev, "%s: err %d copying back to user.\n",
++				__func__, err);
++	goto out_release_mem;
++
++out_einval:
++	dev_err(hba->dev,
++		"%s: illegal ufs query ioctl data, opcode 0x%x, idn 0x%x\n",
++		__func__, ioctl_data->opcode, (unsigned int)ioctl_data->idn);
++	err = -EINVAL;
++out_release_mem:
++	kfree(ioctl_data);
++	kfree(desc);
++out:
++	return err;
++}
++
++/**
++ * ufshcd_ioctl - ufs ioctl callback registered in scsi_host
++ * @dev: scsi device required for per LUN queries
++ * @cmd: command opcode
++ * @buffer: user space buffer for transferring data
++ *
++ * Supported commands:
++ * UFS_IOCTL_QUERY
++ */
++static int ufshcd_ioctl(struct scsi_device *dev, int cmd, void __user *buffer)
++{
++	struct ufs_hba *hba = shost_priv(dev->host);
++	int err = 0;
++
++	printk("[%s%d] cmd:0x%x \n", __func__, __LINE__, cmd);
++
++	BUG_ON(!hba);
++	if (!buffer) {
++		if (cmd != SCSI_UFS_REQUEST_SENSE) {
++			dev_err(hba->dev, "%s: User buffer is NULL!\n", __func__);
++			return -EINVAL;
++		}
++	}
++	switch (cmd) {
++#if 0
++	case SCSI_UFS_REQUEST_SENSE:
++		err = ufshcd_send_request_sense(hba, hba->sdev_rpmb);
++		if (err) {
++			dev_warn(hba->dev, "%s failed to clear uac on rpmb(w-lu) %d\n",
++					__func__, err);
++			}
++		hba->host->wlun_clr_uac = false;
++		break;
++#endif
++	case UFS_IOCTL_QUERY:
++		//pm_runtime_get_sync(hba->dev);
++		printk("UFSTEST %s:%d sdev %p lun %d\n", __func__, __LINE__,
++				dev, dev->lun);
++		err = ufshcd_query_ioctl(hba,
++				ufshcd_scsi_to_upiu_lun(dev->lun), buffer);
++		//pm_runtime_put_sync(hba->dev);
++		break;
++#if 0
++	case UFS_IOCTL_BLKROSET:
++		err = -ENOIOCTLCMD;
++		break;
++#endif
++	default:
++		err = -EINVAL;
++//		dev_err(hba->dev, "%s: Illegal ufs-IOCTL cmd %d\n", __func__,
++//				cmd);
++		break;
++	}
++
++	return err;
++}
++
+ static struct scsi_host_template ufshcd_driver_template = {
+ 	.module			= THIS_MODULE,
+ 	.name			= UFSHCD,
+@@ -4919,9 +5350,15 @@
+ 	.slave_destroy		= ufshcd_slave_destroy,
+ 	.change_queue_depth	= ufshcd_change_queue_depth,
+ 	//.eh_abort_handler	= ufshcd_abort,
+-	//.eh_device_reset_handler = ufshcd_eh_device_reset_handler,
+-	//.eh_host_reset_handler   = ufshcd_eh_host_reset_handler,
+-	//.eh_timed_out		= ufshcd_eh_timed_out,
++//	.eh_device_reset_handler = ufshcd_eh_device_reset_handler,
++//	.eh_host_reset_handler   = ufshcd_eh_host_reset_handler,
++//	.eh_timed_out		= ufshcd_eh_timed_out,
++	.ioctl 				= ufshcd_ioctl,
++#if defined(CONFIG_UFSHPB)
++#ifdef CONFIG_COMPAT
++	.compat_ioctl 				= ufshcd_ioctl,
++#endif
++#endif
+ 	.this_id		= -1,
+ 	.sg_tablesize		= SG_ALL,
+ 	.cmd_per_lun		= UFSHCD_CMD_PER_LUN,
+@@ -5987,6 +6424,9 @@
+  */
+ void ufshcd_remove(struct ufs_hba *hba)
+ {
++#if defined(CONFIG_UFSHPB)
++	ufshpb_release(hba, HPB_NEED_INIT);
++#endif
+ 	scsi_remove_host(hba->host);
+ 	/* disable interrupts */
+ 	ufshcd_disable_intr(hba, hba->intr_mask);
+@@ -6283,6 +6723,9 @@
+ 	 */
+ 	ufshcd_set_ufs_dev_poweroff(hba);
+ 
++#if defined(CONFIG_UFSHPB)
++	hba->ufshpb_state = HPB_NEED_INIT;
++#endif
+ 	async_schedule(ufshcd_async_scan, hba);
+ 
+ 	return 0;
+diff -urN iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufshcd.h iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufshcd.h
+--- iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufshcd.h	2018-06-27 16:36:27.213891989 +0900
++++ iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufshcd.h	2018-06-27 16:55:41.805891896 +0900
+@@ -3,6 +3,7 @@
+  *
+  * This code is based on drivers/scsi/ufs/ufshcd.h
+  * Copyright (C) 2011-2013 Samsung India Software Operations
++ * Copyright (c) 2017-2018 Samsung Electronics Co., Ltd.
+  *
+  * Authors:
+  *	Santosh Yaraganavi <santosh.sy@samsung.com>
+@@ -63,8 +64,13 @@
+ #include <scsi/scsi_dbg.h>
+ #include <scsi/scsi_eh.h>
+ 
++#include <scsi/scsi_ioctl.h>
++
+ #include "ufs.h"
+ #include "ufshci.h"
++#if defined(CONFIG_UFSHPB)
++#include "ufshpb.h"
++#endif
+ 
+ #define UFSHCD "ufshcd"
+ #define UFSHCD_DRIVER_VERSION "0.2"
+@@ -78,6 +84,13 @@
+ 	DEV_CMD_TYPE_QUERY		= 0x1,
+ };
+ 
++/* UFSHCD states */
++enum {
++	UFSHCD_STATE_RESET,
++	UFSHCD_STATE_ERROR,
++	UFSHCD_STATE_OPERATIONAL,
++};
++
+ /**
+  * struct uic_command - UIC command structure
+  * @command: UIC command
+@@ -508,6 +521,15 @@
+ 	uint32_t self_test_mode;
+ 	struct ufshcd_sg_entry *ucd_prdt_ptr_st;
+ 
++#if defined(CONFIG_UFSHPB)
++	struct ufshpb_lu *ufshpb_lup[UFS_UPIU_MAX_GENERAL_LUN];
++	struct delayed_work ufshpb_init_work;
++	struct work_struct ufshpb_eh_work;
++	int ufshpb_state;
++	struct scsi_device *sdev_ufs_lu[UFS_UPIU_MAX_GENERAL_LUN];
++	bool issue_ioctl;
++#endif
++
+ /* UFSHCI doesn't support DWORD size in UTRD */
+ #define UFSHCI_QUIRK_BROKEN_DWORD_UTRD		BIT(0)
+ #define UFSHCI_QUIRK_BROKEN_REQ_LIST_CLR	BIT(1)
+@@ -652,6 +674,10 @@
+ 
+ int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+ int ufshcd_read_health_desc(struct ufs_hba *hba, u8 *buf, u32 size);
++#if defined(CONFIG_UFSHPB)
++int ufshcd_query_descriptor(struct ufs_hba *hba, enum query_opcode opcode,
++		u8 idn, u8 index, u8 selector, u8 *desc_buf, int *buf_len);
++#endif
+ 
+ #define ASCII_STD true
+ #define UTF16_STD false
+diff -urN iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufshpb.c iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufshpb.c
+--- iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufshpb.c	1970-01-01 09:00:00.000000000 +0900
++++ iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufshpb.c	2018-06-27 16:55:41.805891896 +0900
+@@ -0,0 +1,2986 @@
++/*
++ * Universal Flash Storage Host Performance Booster
++ *
++ * Copyright (C) 2017-2018 Samsung Electronics Co., Ltd.
++ *
++ * Authors:
++ *	Yongmyung Lee <ymhungry.lee@samsung.com>
++ *	Jinyoung Choi <j-young.choi@samsung.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ * See the COPYING file in the top-level directory or visit
++ * <http://www.gnu.org/licenses/gpl-2.0.html>
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * This program is provided "AS IS" and "WITH ALL FAULTS" and
++ * without warranty of any kind. You are solely responsible for
++ * determining the appropriateness of using and distributing
++ * the program and assume all risks associated with your exercise
++ * of rights with respect to the program, including but not limited
++ * to infringement of third party rights, the risks and costs of
++ * program errors, damage to or loss of data, programs or equipment,
++ * and unavailability or interruption of operations. Under no
++ * circumstances will the contributor of this Program be liable for
++ * any damages of any kind arising from your use or distribution of
++ * this program.
++ *
++ * The Linux Foundation chooses to take subject only to the GPLv2
++ * license terms, and distributes only under these terms.
++ */
++
++#include <linux/slab.h>
++#include <linux/blkdev.h>
++#include <scsi/scsi.h>
++#include <linux/sysfs.h>
++#include <linux/blktrace_api.h>
++
++#include "../../../block/blk.h"
++
++#include "ufs.h"
++#include "ufshcd.h"
++#include "ufshpb.h"
++
++/*
++ * UFSHPB DEBUG
++ * */
++#define INFO_MSG(msg, args...)		printk(KERN_INFO "%s:%d " msg "\n", \
++					       __func__, __LINE__, ##args)
++#define INIT_INFO(msg, args...)		INFO_MSG(msg, ##args)
++#define RELEASE_INFO(msg, args...)	INFO_MSG(msg, ##args)
++#define SYSFS_INFO(msg, args...)	INFO_MSG(msg, ##args)
++#define ERR_MSG(msg, args...)		printk(KERN_ERR "%s:%d " msg "\n", \
++					       __func__, __LINE__, ##args)
++#define WARNING_MSG(msg, args...)	printk(KERN_WARNING "%s:%d " msg "\n", \
++					       __func__, __LINE__, ##args)
++
++#define HPB_DEBUG(hpb, msg, args...)			\
++	do { if (hpb->debug)				\
++		printk(KERN_ERR "%s:%d " msg "\n",	\
++		       __func__, __LINE__, ##args);	\
++	} while (0)
++
++#define TMSG(hpb, args...)						\
++	do { if (hpb->hba->sdev_ufs_lu[hpb->lun] &&			\
++		 hpb->hba->sdev_ufs_lu[hpb->lun]->request_queue)	\
++		blk_add_trace_msg(					\
++			hpb->hba->sdev_ufs_lu[hpb->lun]->request_queue,	\
++			##args);					\
++	} while (0)
++
++/*
++ * debug variables
++ */
++int alloc_mctx;
++
++/*
++ * define global constants
++ */
++static int sects_per_blk_shift;
++static int bits_per_dword_shift;
++static int bits_per_dword_mask;
++static int bits_per_byte_shift;
++
++static int ufshpb_create_sysfs(struct ufs_hba *hba,
++			       struct ufshpb_lu *hpb);
++static void ufshpb_error_handler(struct work_struct *work);
++static void ufshpb_evict_region(struct ufshpb_lu *hpb,
++				struct ufshpb_region *cb);
++
++static inline void
++ufshpb_get_bit_offset(struct ufshpb_lu *hpb, int subregion_offset,
++		      int *dword, int *offset)
++{
++	*dword = subregion_offset >> bits_per_dword_shift;
++	*offset = subregion_offset & bits_per_dword_mask;
++}
++
++/* called with hpb_lock (irq) */
++static bool
++ufshpb_ppn_dirty_check(struct ufshpb_lu *hpb, struct ufshpb_subregion *cp,
++		       int subregion_offset)
++{
++	bool is_dirty;
++	unsigned int bit_dword, bit_offset;
++
++	ufshpb_get_bit_offset(hpb, subregion_offset,
++			      &bit_dword, &bit_offset);
++
++	if (!cp->mctx->ppn_dirty)
++		return false;
++
++	is_dirty = cp->mctx->ppn_dirty[bit_dword] &
++		(1 << bit_offset) ? true : false;
++
++	return is_dirty;
++}
++
++static void ufshpb_ppn_prep(struct ufshpb_lu *hpb, struct ufshcd_lrb *lrbp,
++			    unsigned long long ppn)
++{
++	unsigned char cmd[16] = { 0 };
++
++	/*
++	 * [14] = Grounp Number, [15] = Transfer length
++	 */
++	cmd[0] = READ_16;
++	cmd[2] = lrbp->cmd->cmnd[2];
++	cmd[3] = lrbp->cmd->cmnd[3];
++	cmd[4] = lrbp->cmd->cmnd[4];
++	cmd[5] = lrbp->cmd->cmnd[5];
++	cmd[6] = GET_BYTE_7(ppn);
++	cmd[7] = GET_BYTE_6(ppn);
++	cmd[8] = GET_BYTE_5(ppn);
++	cmd[9] = GET_BYTE_4(ppn);
++	cmd[10] = GET_BYTE_3(ppn);
++	cmd[11] = GET_BYTE_2(ppn);
++	cmd[12] = GET_BYTE_1(ppn);
++	cmd[13] = GET_BYTE_0(ppn);
++	cmd[14] = 0x11;
++	cmd[15] = 0x01;
++
++	memcpy(lrbp->cmd->cmnd, cmd, MAX_CDB_SIZE);
++	memcpy(lrbp->ucd_req_ptr->sc.cdb, cmd, MAX_CDB_SIZE);
++}
++
++/* called with hpb_lock (irq) */
++static inline void
++ufshpb_set_dirty_bits(struct ufshpb_lu *hpb, struct ufshpb_region *cb,
++		      struct ufshpb_subregion *cp, int dword, int offset,
++		      unsigned int count)
++{
++	const unsigned long mask = ((1UL << count) - 1) & 0xffffffff;
++
++	if (cb->region_state == HPBREGION_INACTIVE)
++		return;
++
++	BUG_ON(!cp->mctx);
++	cp->mctx->ppn_dirty[dword] |= (mask << offset);
++}
++
++static void
++ufshpb_set_dirty(struct ufshpb_lu *hpb, struct ufshcd_lrb *lrbp, int region,
++		 int subregion, int subregion_offset)
++{
++	struct ufshpb_region *cb;
++	struct ufshpb_subregion *cp;
++	int count;
++	int bit_count, bit_dword, bit_offset;
++
++	count = blk_rq_sectors(lrbp->cmd->request) >> sects_per_blk_shift;
++	ufshpb_get_bit_offset(hpb, subregion_offset,
++			      &bit_dword, &bit_offset);
++
++	do {
++		bit_count = min(count, BITS_PER_DWORD - bit_offset);
++
++		cb = hpb->region_tbl + region;
++		cp = cb->subregion_tbl + subregion;
++
++		ufshpb_set_dirty_bits(hpb, cb, cp,
++				      bit_dword, bit_offset, bit_count);
++
++		bit_offset = 0;
++		bit_dword++;
++
++		if (bit_dword == hpb->dwords_per_subregion) {
++			bit_dword = 0;
++			subregion++;
++
++			if (subregion == hpb->subregions_per_region) {
++				subregion = 0;
++				region++;
++			}
++		}
++
++		count -= bit_count;
++	} while (count);
++
++	BUG_ON(count < 0);
++}
++
++static inline bool ufshpb_is_read_lrbp(struct ufshcd_lrb *lrbp)
++{
++	if (lrbp->cmd->cmnd[0] == READ_10 || lrbp->cmd->cmnd[0] == READ_16)
++		return true;
++
++	return false;
++}
++
++static inline bool ufshpb_is_write_discard_lrbp(struct ufshcd_lrb *lrbp)
++{
++	if (lrbp->cmd->cmnd[0] == WRITE_10 || lrbp->cmd->cmnd[0] == WRITE_16
++	    || lrbp->cmd->cmnd[0] == UNMAP)
++		return true;
++
++	return false;
++}
++
++static inline void
++ufshpb_get_pos_from_lpn(struct ufshpb_lu *hpb, unsigned int lpn, int *region,
++			int *subregion, int *offset)
++{
++	int region_offset;
++
++	*region = lpn >> hpb->entries_per_region_shift;
++	region_offset = lpn & hpb->entries_per_region_mask;
++	*subregion = region_offset >> hpb->entries_per_subregion_shift;
++	*offset = region_offset & hpb->entries_per_subregion_mask;
++}
++
++static unsigned long long ufshpb_get_ppn(struct ufshpb_map_ctx *mctx, int pos)
++{
++	unsigned long long *ppn_table;
++	struct page *page;
++	int index, offset;
++
++	index = pos / HPB_ENTREIS_PER_OS_PAGE;
++	offset = pos % HPB_ENTREIS_PER_OS_PAGE;
++
++	page = mctx->m_page[index];
++	BUG_ON(!page);
++
++	ppn_table = page_address(page);
++	BUG_ON(!ppn_table);
++
++	return ppn_table[offset];
++}
++
++void ufshpb_prep_fn(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
++{
++	struct ufshpb_lu *hpb;
++	struct ufshpb_region *cb;
++	struct ufshpb_subregion *cp;
++	unsigned int lpn;
++	unsigned long long ppn = 0;
++	int region, subregion, subregion_offset;
++
++	/* WKLU could not be HPB-LU */
++	if (lrbp->lun >= UFS_UPIU_MAX_GENERAL_LUN)
++		return;
++
++	hpb = hba->ufshpb_lup[lrbp->lun];
++	if (!hpb || !hpb->lu_hpb_enable) {
++		if (ufshpb_is_read_lrbp(lrbp))
++			goto read_10;
++		return;
++	}
++
++	if (hpb->force_disable) {
++		if (ufshpb_is_read_lrbp(lrbp))
++			goto read_10;
++		return;
++	}
++
++	lpn = blk_rq_pos(lrbp->cmd->request) / SECTORS_PER_BLOCK;
++	ufshpb_get_pos_from_lpn(hpb, lpn, &region,
++				&subregion, &subregion_offset);
++	cb = hpb->region_tbl + region;
++
++	if (ufshpb_is_write_discard_lrbp(lrbp)) {
++		spin_lock_bh(&hpb->hpb_lock);
++
++		if (cb->region_state == HPBREGION_INACTIVE) {
++			spin_unlock_bh(&hpb->hpb_lock);
++			return;
++		}
++		ufshpb_set_dirty(hpb, lrbp, region, subregion,
++				 subregion_offset);
++		spin_unlock_bh(&hpb->hpb_lock);
++		return;
++	}
++
++	if (!ufshpb_is_read_lrbp(lrbp))
++		return;
++
++	if (blk_rq_sectors(lrbp->cmd->request) != SECTORS_PER_BLOCK) {
++		TMSG(hpb, "%llu + %u READ_10 many_blocks %d - %d",
++		     (unsigned long long)blk_rq_pos(lrbp->cmd->request),
++		     (unsigned int)blk_rq_sectors(lrbp->cmd->request),
++		     region, subregion);
++		return;
++	}
++
++	cp = cb->subregion_tbl + subregion;
++
++	spin_lock_bh(&hpb->hpb_lock);
++	if (cb->region_state == HPBREGION_INACTIVE ||
++	    cp->subregion_state != HPBSUBREGION_CLEAN) {
++		if (cb->region_state == HPBREGION_INACTIVE) {
++			atomic64_inc(&hpb->region_miss);
++			TMSG(hpb, "%llu + %u READ_10 RG_INACT %d - %d",
++			     (unsigned long long)blk_rq_pos(lrbp->cmd->request),
++			     (unsigned int)blk_rq_sectors(lrbp->cmd->request),
++			     region, subregion);
++		} else if (cp->subregion_state == HPBSUBREGION_DIRTY
++			   || cp->subregion_state == HPBSUBREGION_ISSUED) {
++			atomic64_inc(&hpb->subregion_miss);
++			TMSG(hpb, "%llu + %u READ_10 SRG_D %d - %d",
++			     (unsigned long long)blk_rq_pos(lrbp->cmd->request),
++			     (unsigned int)blk_rq_sectors(lrbp->cmd->request),
++			     region, subregion);
++		} else
++			TMSG(hpb, "%llu + %u READ_10 ( %d %d ) %d - %d",
++			     (unsigned long long)blk_rq_pos(lrbp->cmd->request),
++			     (unsigned int)blk_rq_sectors(lrbp->cmd->request),
++			     cb->region_state, cp->subregion_state, region,
++			     subregion);
++		spin_unlock_bh(&hpb->hpb_lock);
++		return;
++	}
++
++	if (ufshpb_ppn_dirty_check(hpb, cp, subregion_offset)) {
++		atomic64_inc(&hpb->entry_dirty_miss);
++		TMSG(hpb, "%llu + %u READ_10 E_D %d - %d",
++		     (unsigned long long)blk_rq_pos(lrbp->cmd->request),
++		     (unsigned int)blk_rq_sectors(lrbp->cmd->request), region,
++		     subregion);
++		spin_unlock_bh(&hpb->hpb_lock);
++		return;
++	}
++
++	ppn = ufshpb_get_ppn(cp->mctx, subregion_offset);
++	spin_unlock_bh(&hpb->hpb_lock);
++
++	ufshpb_ppn_prep(hpb, lrbp, ppn);
++	TMSG(hpb, "%llu + %u READ_16 %d - %d",
++	     (unsigned long long)blk_rq_pos(lrbp->cmd->request),
++	     (unsigned int)blk_rq_sectors(lrbp->cmd->request), region,
++	     subregion);
++	atomic64_inc(&hpb->hit);
++	return;
++read_10:
++	if (!hpb || !lrbp)
++		return;
++	TMSG(hpb, "%llu + %u READ_10",
++	     (unsigned long long)blk_rq_pos(lrbp->cmd->request),
++	     (unsigned int)blk_rq_sectors(lrbp->cmd->request));
++	atomic64_inc(&hpb->miss);
++	return;
++}
++
++static int ufshpb_clean_dirty_bitmap(struct ufshpb_lu *hpb,
++				     struct ufshpb_subregion *cp)
++{
++	struct ufshpb_region *cb;
++
++	cb = hpb->region_tbl + cp->region;
++
++	/* if mctx is null, active block had been evicted out */
++	if (cb->region_state == HPBREGION_INACTIVE || !cp->mctx) {
++		HPB_DEBUG(hpb, "%d - %d evicted", cp->region, cp->subregion);
++		return -EINVAL;
++	}
++
++	memset(cp->mctx->ppn_dirty, 0x00,
++	       hpb->entries_per_subregion >> bits_per_byte_shift);
++
++	return 0;
++}
++
++static void ufshpb_clean_active_subregion(struct ufshpb_lu *hpb,
++					  struct ufshpb_subregion *cp)
++{
++	struct ufshpb_region *cb;
++
++	cb = hpb->region_tbl + cp->region;
++
++	/* if mctx is null, active block had been evicted out */
++	if (cb->region_state == HPBREGION_INACTIVE || !cp->mctx) {
++		HPB_DEBUG(hpb, "%d - %d evicted", cp->region, cp->subregion);
++		return;
++	}
++	cp->subregion_state = HPBSUBREGION_CLEAN;
++}
++
++static void ufshpb_error_active_subregion(struct ufshpb_lu *hpb,
++					  struct ufshpb_subregion *cp)
++{
++	struct ufshpb_region *cb;
++
++	cb = hpb->region_tbl + cp->region;
++
++	/* if mctx is null, active block had been evicted out */
++	if (cb->region_state == HPBREGION_INACTIVE || !cp->mctx) {
++		ERR_MSG("%d - %d evicted", cp->region, cp->subregion);
++		return;
++	}
++	cp->subregion_state = HPBSUBREGION_DIRTY;
++}
++
++
++static void ufshpb_map_compl_process(struct ufshpb_lu *hpb,
++				     struct ufshpb_map_req *map_req)
++{
++	unsigned long long debug_ppn_0, debug_ppn_65535;
++
++	map_req->rsp_end = ktime_to_ns(ktime_get());
++
++	debug_ppn_0 = ufshpb_get_ppn(map_req->mctx, 0);
++	debug_ppn_65535 = ufshpb_get_ppn(map_req->mctx, 65535);
++
++	TMSG(hpb, "Noti: C RB %d - %d", map_req->region, map_req->subregion);
++	HPB_DEBUG(hpb, "UFSHPB COMPL READ BUFFER %d - %d ( %llx ~ %llx )",
++		  map_req->region, map_req->subregion,
++		  debug_ppn_0, debug_ppn_65535);
++	HPB_DEBUG(hpb, "Profiling: start~tasklet1 %lld, tasklet1~issue %lld, "
++		  "issue~endio %lld, endio~end %lld",
++		  map_req->rsp_tasklet_enter1 - map_req->rsp_start,
++		  map_req->rsp_issue - map_req->rsp_tasklet_enter1,
++		  map_req->rsp_endio - map_req->rsp_issue,
++		  map_req->rsp_end - map_req->rsp_endio);
++
++	spin_lock(&hpb->hpb_lock);
++	ufshpb_clean_active_subregion(hpb, hpb->region_tbl[map_req->region].subregion_tbl + map_req->subregion);
++	spin_unlock(&hpb->hpb_lock);
++}
++
++/*
++ * Must held rsp_list_lock before enter this function
++ */
++static struct ufshpb_rsp_info *ufshpb_get_req_info(struct ufshpb_lu *hpb)
++{
++	struct ufshpb_rsp_info *rsp_info =
++		list_first_entry_or_null(&hpb->lh_rsp_info_free,
++					 struct ufshpb_rsp_info,
++					 list_rsp_info);
++	if (!rsp_info) {
++		HPB_DEBUG(hpb, "there is no rsp_info");
++		return NULL;
++	}
++	list_del(&rsp_info->list_rsp_info);
++	memset(rsp_info, 0x00, sizeof(struct ufshpb_rsp_info));
++
++	INIT_LIST_HEAD(&rsp_info->list_rsp_info);
++
++	return rsp_info;
++}
++
++static void ufshpb_map_req_compl_fn(struct request *req, int error)
++{
++	struct ufshpb_map_req *map_req =
++		(struct ufshpb_map_req *) req->end_io_data;
++	struct ufs_hba *hba;
++	struct ufshpb_lu *hpb;
++	struct scsi_sense_hdr sshdr;
++	struct ufshpb_region *cb;
++	struct ufshpb_rsp_info *rsp_info;
++	unsigned long flags;
++
++	hpb = map_req->hpb;
++	hba = hpb->hba;
++	cb = hpb->region_tbl + map_req->region;
++	map_req->rsp_endio = ktime_to_ns(ktime_get());
++
++	if (hba->ufshpb_state != HPB_PRESENT)
++		goto free_map_req;
++
++	if (error) {
++		ERR_MSG("error number %d ( %d - %d )",
++			error, map_req->region, map_req->subregion);
++		scsi_normalize_sense(map_req->sense, SCSI_SENSE_BUFFERSIZE,
++				     &sshdr);
++		ERR_MSG("code %x sense_key %x asc %x ascq %x",
++			sshdr.response_code,
++			sshdr.sense_key, sshdr.asc, sshdr.ascq);
++		ERR_MSG("byte4 %x byte5 %x byte6 %x additional_len %x",
++			sshdr.byte4, sshdr.byte5,
++			sshdr.byte6, sshdr.additional_length);
++		atomic64_inc(&hpb->rb_fail);
++
++		if (sshdr.sense_key == ILLEGAL_REQUEST) {
++			spin_lock(&hpb->hpb_lock);
++			if (cb->region_state == HPBREGION_PINNED) {
++				if (sshdr.asc == 0x06 && sshdr.ascq == 0x01) {
++					HPB_DEBUG(hpb, "retry pinned rb %d - %d",
++						  map_req->region,
++						  map_req->subregion);
++					INIT_LIST_HEAD(&map_req->list_map_req);
++					list_add_tail(&map_req->list_map_req,
++						      &hpb->lh_map_req_retry);
++					spin_unlock(&hpb->hpb_lock);
++
++					schedule_delayed_work(&hpb->ufshpb_retry_work,
++							      msecs_to_jiffies(5000));
++					return;
++
++				} else {
++					HPB_DEBUG(hpb, "pinned rb %d - %d(dirty)",
++						  map_req->region,
++						  map_req->subregion);
++
++					ufshpb_error_active_subregion(hpb, cb->subregion_tbl + map_req->subregion);
++					spin_unlock(&hpb->hpb_lock);
++				}
++			} else {
++				spin_unlock(&hpb->hpb_lock);
++
++				spin_lock_irqsave(&hpb->rsp_list_lock, flags);
++				rsp_info = ufshpb_get_req_info(hpb);
++				spin_unlock_irqrestore(&hpb->rsp_list_lock,
++						       flags);
++				if (!rsp_info) {
++					dev_warn(hba->dev, "%s No rsp_info\n",
++						 __func__);
++					goto free_map_req;
++				}
++
++				rsp_info->type = HPB_RSP_REQ_REGION_UPDATE;
++				rsp_info->rsp_start = ktime_to_ns(ktime_get());
++				rsp_info->active_cnt = 0;
++				rsp_info->inactive_cnt = 1;
++				rsp_info->inactive_list.region[0] =
++					map_req->region;
++				HPB_DEBUG(hpb, "Non-pinned rb %d is added to "
++					  "rsp_info_list", map_req->region);
++
++				spin_lock_irqsave(&hpb->rsp_list_lock, flags);
++				list_add_tail(&rsp_info->list_rsp_info,
++					      &hpb->lh_rsp_info);
++				spin_unlock_irqrestore(&hpb->rsp_list_lock,
++						       flags);
++
++				tasklet_schedule(&hpb->ufshpb_tasklet);
++			}
++		}
++	} else {
++		ufshpb_map_compl_process(hpb, map_req);
++	}
++free_map_req:
++	INIT_LIST_HEAD(&map_req->list_map_req);
++	spin_lock(&hpb->hpb_lock);
++	list_add_tail(&map_req->list_map_req, &hpb->lh_map_req_free);
++	spin_unlock(&hpb->hpb_lock);
++}
++
++static int ufshpb_execute_req_dev_ctx(struct ufshpb_lu *hpb,
++				      unsigned char *cmd,
++				      void *buf, int length)
++{
++	unsigned long flags;
++	struct scsi_sense_hdr sshdr;
++	struct scsi_device *sdp;
++	struct ufs_hba *hba;
++	int ret = 0;
++
++	hba = hpb->hba;
++
++	if (!hba->sdev_ufs_lu[hpb->lun]) {
++		dev_warn(hba->dev, "%s UFSHPB cannot find scsi_device\n",
++			 __func__);
++		return -ENODEV;
++	}
++
++	spin_lock_irqsave(hba->host->host_lock, flags);
++	sdp = hba->sdev_ufs_lu[hpb->lun];
++	if (!sdp)
++		return -ENODEV;
++
++	ret = scsi_device_get(sdp);
++	if (!ret && !scsi_device_online(sdp)) {
++		spin_unlock_irqrestore(hba->host->host_lock, flags);
++		ret = -ENODEV;
++		scsi_device_put(sdp);
++		return ret;
++	}
++	hba->issue_ioctl = true;
++	spin_unlock_irqrestore(hba->host->host_lock, flags);
++
++	ret = scsi_execute_req_flags(sdp, cmd, DMA_FROM_DEVICE,
++				     buf, length, &sshdr,
++				     msecs_to_jiffies(30000), 3, NULL, 0);
++	spin_lock_irqsave(hba->host->host_lock, flags);
++	hba->issue_ioctl = false;
++	spin_unlock_irqrestore(hba->host->host_lock, flags);
++	scsi_device_put(sdp);
++
++	return ret;
++}
++
++static void print_buf(unsigned char *buf, int length)
++{
++	int i;
++	int line_max = 32;
++
++	printk(KERN_ERR "%s:%d Device Context Print Start!!\n", __func__, __LINE__);
++	for (i = 0; i < length; i++) {
++		if (i % line_max == 0)
++			printk(KERN_ERR "(0x%.2x) :", i);
++		printk(KERN_ERR " %.2x", buf[i]);
++
++		if ((i + 1) % line_max == 0)
++			printk(KERN_ERR "\n");
++	}
++	printk(KERN_ERR "\n");
++}
++
++static inline void ufshpb_set_read_dev_ctx_cmd(unsigned char *cmd, int lba,
++					       int length)
++{
++	cmd[0] = READ_10;
++	cmd[1] = 0x02;
++	cmd[2] = GET_BYTE_3(lba);
++	cmd[3] = GET_BYTE_2(lba);
++	cmd[4] = GET_BYTE_1(lba);
++	cmd[5] = GET_BYTE_0(lba);
++	cmd[6] = GET_BYTE_2(length);
++	cmd[7] = GET_BYTE_1(length);
++	cmd[8] = GET_BYTE_0(length);
++}
++
++int ufshpb_issue_req_dev_ctx(struct ufshpb_lu *hpb, unsigned char *buf,
++			     int buf_length)
++{
++	unsigned char cmd[10] = { 0 };
++	int cmd_len = buf_length >> OS_PAGE_SHIFT;
++	int ret = 0;
++
++	ufshpb_set_read_dev_ctx_cmd(cmd, 0x48504230, cmd_len);
++
++	ret = ufshpb_execute_req_dev_ctx(hpb, cmd, buf, buf_length);
++
++	if (ret < 0)
++		HPB_DEBUG(hpb, "failed with err %d", ret);
++
++	print_buf(buf, buf_length);
++
++	return ret;
++}
++
++static inline void ufshpb_set_read_buf_cmd(unsigned char *cmd, int region,
++					   int subregion,
++					   int subregion_mem_size)
++{
++	cmd[0] = UFSHPB_READ_BUFFER;
++	cmd[1] = 0x01;
++	cmd[2] = GET_BYTE_1(region);
++	cmd[3] = GET_BYTE_0(region);
++	cmd[4] = GET_BYTE_1(subregion);
++	cmd[5] = GET_BYTE_0(subregion);
++	cmd[6] = GET_BYTE_2(subregion_mem_size);
++	cmd[7] = GET_BYTE_1(subregion_mem_size);
++	cmd[8] = GET_BYTE_0(subregion_mem_size);
++	cmd[9] = 0x00;
++}
++
++static void ufshpb_bio_init(struct bio *bio, struct bio_vec *table,
++			    int max_vecs)
++{
++	bio_init(bio);
++
++	bio->bi_io_vec = table;
++	bio->bi_max_vecs = max_vecs;
++}
++
++static int ufshpb_add_bio_page(struct ufshpb_lu *hpb, struct request_queue *q,
++			       struct bio *bio, struct bio_vec *bvec,
++			       struct ufshpb_map_ctx *mctx)
++{
++	struct page *page = NULL;
++	int i, ret = 0;
++
++	ufshpb_bio_init(bio, bvec, hpb->mpages_per_subregion);
++
++	for (i = 0; i < hpb->mpages_per_subregion; i++) {
++		/* virt_to_page(p + (OS_PAGE_SIZE * i)); */
++		page = mctx->m_page[i];
++		if (!page)
++			return -ENOMEM;
++
++		ret = bio_add_pc_page(q, bio, page, hpb->mpage_bytes, 0);
++
++		if (ret != hpb->mpage_bytes) {
++			ERR_MSG("error ret %d", ret);
++			return -EINVAL;
++		}
++	}
++
++	return 0;
++}
++
++static inline void ufshpb_issue_map_req(struct request_queue *q,
++					struct request *req)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(q->queue_lock, flags);
++	list_add(&req->queuelist, &q->queue_head);
++	spin_unlock_irqrestore(q->queue_lock, flags);
++}
++
++static int ufshpb_map_req_issue(struct ufshpb_lu *hpb,
++				struct request_queue *q,
++				struct ufshpb_map_req *map_req)
++{
++	struct request *req;
++	struct bio *bio;
++	unsigned char cmd[16] = { 0 };
++	unsigned long long debug_ppn_0, debug_ppn_65535;
++	int ret;
++
++	bio = &map_req->bio;
++
++	ret = ufshpb_add_bio_page(hpb, q, bio, map_req->bvec, map_req->mctx);
++	if (ret) {
++		HPB_DEBUG(hpb, "ufshpb_add_bio_page_error %d", ret);
++		return ret;
++	}
++
++	ufshpb_set_read_buf_cmd(cmd, map_req->region, map_req->subregion,
++				hpb->subregion_mem_size);
++
++	req = &map_req->req;
++	blk_rq_init(q, req);
++	blk_rq_append_bio(q, req, bio);
++
++	req->cmd_len = COMMAND_SIZE(cmd[0]);
++	memcpy(req->cmd, cmd, req->cmd_len);
++
++	req->cmd_type = REQ_TYPE_BLOCK_PC;
++	req->cmd_flags = READ | REQ_SOFTBARRIER | REQ_QUIET | REQ_PREEMPT;
++	req->timeout = msecs_to_jiffies(30000);
++	req->end_io = ufshpb_map_req_compl_fn;
++	req->end_io_data = (void *)map_req;
++	req->sense = map_req->sense;
++	req->sense_len = 0;
++
++	debug_ppn_0 = ufshpb_get_ppn(map_req->mctx, 0);
++	debug_ppn_65535 = ufshpb_get_ppn(map_req->mctx, 65535);
++
++	HPB_DEBUG(hpb, "ISSUE READ_BUFFER : %d - %d ( %llx ~ %llx ) retry = %d",
++		  map_req->region, map_req->subregion,
++		  debug_ppn_0, debug_ppn_65535, map_req->retry_cnt);
++	TMSG(hpb, "Noti: I RB %d - %d", map_req->region, map_req->subregion);
++
++	/* this sequence already has spin_lock_irqsave(queue_lock) */
++	ufshpb_issue_map_req(q, req);
++	map_req->rsp_issue = ktime_to_ns(ktime_get());
++
++	atomic64_inc(&hpb->map_req_cnt);
++
++	return 0;
++}
++
++static int ufshpb_set_map_req(struct ufshpb_lu *hpb, int region, int subregion,
++			      struct ufshpb_map_ctx *mctx,
++			      struct ufshpb_rsp_info *rsp_info)
++{
++	struct ufshpb_map_req *map_req;
++
++	spin_lock(&hpb->hpb_lock);
++	map_req = list_first_entry_or_null(&hpb->lh_map_req_free,
++					   struct ufshpb_map_req,
++					   list_map_req);
++	if (!map_req) {
++		HPB_DEBUG(hpb, "There is no map_req");
++		spin_unlock(&hpb->hpb_lock);
++		return -ENOMEM;
++	}
++	list_del(&map_req->list_map_req);
++	memset(map_req, 0x00, sizeof(struct ufshpb_map_req));
++
++	spin_unlock(&hpb->hpb_lock);
++
++	map_req->hpb = hpb;
++	map_req->region = region;
++	map_req->subregion = subregion;
++	map_req->mctx = mctx;
++	map_req->lun = hpb->lun;
++	map_req->rsp_start = rsp_info->rsp_start;
++	map_req->rsp_tasklet_enter1 = rsp_info->rsp_tasklet_enter;
++
++	return ufshpb_map_req_issue(hpb, hpb->hba->sdev_ufs_lu[hpb->lun]->request_queue, map_req);
++}
++
++static struct ufshpb_map_ctx *ufshpb_get_map_ctx(struct ufshpb_lu *hpb,
++						 int *err)
++{
++	struct ufshpb_map_ctx *mctx;
++
++	mctx = list_first_entry_or_null(&hpb->lh_map_ctx,
++					struct ufshpb_map_ctx, list_table);
++	if (mctx) {
++		list_del_init(&mctx->list_table);
++		hpb->debug_free_table--;
++		return mctx;
++	}
++	*err = -ENOMEM;
++	return NULL;
++}
++
++static inline void ufshpb_add_lru_info(struct victim_select_info *lru_info,
++				       struct ufshpb_region *cb)
++{
++	cb->region_state = HPBREGION_ACTIVE;
++	list_add_tail(&cb->list_region, &lru_info->lru);
++	atomic64_inc(&lru_info->active_cnt);
++}
++
++static inline int ufshpb_add_region(struct ufshpb_lu *hpb,
++				    struct ufshpb_region *cb)
++{
++	struct victim_select_info *lru_info;
++	int subregion;
++	int err = 0;
++
++	lru_info = &hpb->lru_info;
++
++	HPB_DEBUG(hpb, "\x1b[44m\x1b[32m E->active region: %d \x1b[0m",
++		  cb->region);
++	TMSG(hpb, "Noti: ACT RG: %d", cb->region);
++
++	for (subregion = 0; subregion < cb->subregion_count; subregion++) {
++		struct ufshpb_subregion *cp;
++
++		cp = cb->subregion_tbl + subregion;
++
++		cp->mctx = ufshpb_get_map_ctx(hpb, &err);
++		if (!cp->mctx) {
++			HPB_DEBUG(hpb, "get mctx failed. err %d subregion %d "
++				  "free_table %d", err, subregion,
++				  hpb->debug_free_table);
++			goto out;
++		}
++
++		cp->subregion_state = HPBSUBREGION_DIRTY;
++	}
++	ufshpb_add_lru_info(lru_info, cb);
++
++	atomic64_inc(&hpb->region_add);
++out:
++	return err;
++}
++
++static inline void ufshpb_put_map_ctx(struct ufshpb_lu *hpb,
++				      struct ufshpb_map_ctx *mctx)
++{
++	list_add(&mctx->list_table, &hpb->lh_map_ctx);
++	hpb->debug_free_table++;
++}
++
++static inline void ufshpb_purge_active_subregion(struct ufshpb_lu *hpb,
++						 struct ufshpb_subregion *cp,
++						 int state)
++{
++	if (state == HPBSUBREGION_UNUSED) {
++		ufshpb_put_map_ctx(hpb, cp->mctx);
++		cp->mctx = NULL;
++	}
++
++	cp->subregion_state = state;
++}
++
++static inline void ufshpb_cleanup_lru_info(struct victim_select_info *lru_info,
++					   struct ufshpb_region *cb)
++{
++	list_del_init(&cb->list_region);
++	cb->region_state = HPBREGION_INACTIVE;
++	cb->hit_count = 0;
++	atomic64_dec(&lru_info->active_cnt);
++}
++
++static inline void ufshpb_evict_region(struct ufshpb_lu *hpb,
++				       struct ufshpb_region *cb)
++{
++	struct victim_select_info *lru_info;
++	struct ufshpb_subregion *cp;
++	int subregion;
++
++	lru_info = &hpb->lru_info;
++
++	HPB_DEBUG(hpb, "\x1b[41m\x1b[33m C->EVICT region: %d \x1b[0m",
++		  cb->region);
++	TMSG(hpb, "Noti: EVIC RG: %d", cb->region);
++
++	ufshpb_cleanup_lru_info(lru_info, cb);
++	atomic64_inc(&hpb->region_evict);
++	for (subregion = 0; subregion < cb->subregion_count; subregion++) {
++		cp = cb->subregion_tbl + subregion;
++
++		ufshpb_purge_active_subregion(hpb, cp, HPBSUBREGION_UNUSED);
++	}
++}
++
++static void ufshpb_hit_lru_info(struct victim_select_info *lru_info,
++				struct ufshpb_region *cb)
++{
++	switch (lru_info->selection_type) {
++	case LRU:
++		list_move_tail(&cb->list_region, &lru_info->lru);
++		break;
++	case LFU:
++		if (cb->hit_count != 0xffffffff)
++			cb->hit_count++;
++
++		list_move_tail(&cb->list_region, &lru_info->lru);
++		break;
++	default:
++		break;
++	}
++}
++
++static struct
++ufshpb_region *ufshpb_victim_lru_info(struct victim_select_info *lru_info)
++{
++	struct ufshpb_region *cb;
++	struct ufshpb_region *victim_cb = NULL;
++	u32 hit_count = 0xffffffff;
++
++	switch (lru_info->selection_type) {
++	case LRU:
++		victim_cb = list_first_entry(&lru_info->lru,
++					     struct ufshpb_region, list_region);
++		break;
++	case LFU:
++		list_for_each_entry(cb, &lru_info->lru, list_region) {
++			if (hit_count > cb->hit_count) {
++				hit_count = cb->hit_count;
++				victim_cb = cb;
++			}
++		}
++		break;
++	default:
++		break;
++	}
++
++	return victim_cb;
++}
++
++static int ufshpb_evict_load_region(struct ufshpb_lu *hpb,
++				    struct ufshpb_rsp_info *rsp_info)
++{
++	struct ufshpb_region *cb;
++	struct ufshpb_region *victim_cb;
++	struct victim_select_info *lru_info;
++	int region, ret;
++	int iter;
++
++	lru_info = &hpb->lru_info;
++	HPB_DEBUG(hpb, "active_cnt :%ld", atomic64_read(&lru_info->active_cnt));
++
++	for (iter = 0; iter < rsp_info->inactive_cnt; iter++) {
++		region = rsp_info->inactive_list.region[iter];
++		cb = hpb->region_tbl + region;
++
++		spin_lock(&hpb->hpb_lock);
++		if (cb->region_state == HPBREGION_PINNED) {
++			/*
++			 * Pinned active-block should not drop-out.
++			 * But if so, it would treat error as critical,
++			 * and it will run ufshpb_eh_work
++			 */
++			dev_warn(hpb->hba->dev,
++				 "UFSHPB pinned active-block drop-out error\n");
++			spin_unlock(&hpb->hpb_lock);
++			goto error;
++		}
++
++		if (list_empty(&cb->list_region)) {
++			spin_unlock(&hpb->hpb_lock);
++			continue;
++		}
++
++		ufshpb_evict_region(hpb, cb);
++		spin_unlock(&hpb->hpb_lock);
++	}
++
++	for (iter = 0; iter < rsp_info->active_cnt; iter++) {
++		region = rsp_info->active_list.region[iter];
++		cb = hpb->region_tbl + region;
++
++		/*
++		 * if already region is added to lru_list,
++		 * just initiate the information of lru.
++		 * because the region already has the map ctx.
++		 * (!list_empty(&cb->list_region) == region->state=active...)
++		 */
++
++		spin_lock(&hpb->hpb_lock);
++		if (!list_empty(&cb->list_region)) {
++			ufshpb_hit_lru_info(lru_info, cb);
++			spin_unlock(&hpb->hpb_lock);
++			continue;
++		}
++
++		if (cb->region_state == HPBREGION_INACTIVE) {
++			if (atomic64_read(&lru_info->active_cnt)
++			    == lru_info->max_lru_active_cnt) {
++				victim_cb = ufshpb_victim_lru_info(lru_info);
++				if (!victim_cb) {
++					dev_warn(hpb->hba->dev,
++						 "UFSHPB victim_cb is NULL\n");
++					spin_unlock(&hpb->hpb_lock);
++					goto error;
++				}
++				TMSG(hpb, "Noti: VT RG %d", victim_cb->region);
++				HPB_DEBUG(hpb, "max lru case. victim choose %d",
++					  victim_cb->region);
++
++				ufshpb_evict_region(hpb, victim_cb);
++			}
++
++			ret = ufshpb_add_region(hpb, cb);
++			if (ret) {
++				dev_warn(hpb->hba->dev,
++					 "UFSHPB memory allocation failed\n");
++				spin_unlock(&hpb->hpb_lock);
++				goto error;
++			}
++		}
++		spin_unlock(&hpb->hpb_lock);
++	}
++	return 0;
++error:
++	return -ENOMEM;
++}
++
++static inline struct
++ufshpb_rsp_field *ufshpb_get_hpb_rsp(struct ufshcd_lrb *lrbp)
++{
++	return (struct ufshpb_rsp_field *)&lrbp->ucd_rsp_ptr->sr.sense_data_len;
++}
++
++static void ufshpb_rsp_map_cmd_req(struct ufshpb_lu *hpb,
++				   struct ufshpb_rsp_info *rsp_info)
++{
++	struct ufshpb_region *cb;
++	struct ufshpb_subregion *cp;
++	int region, subregion;
++	int iter;
++	int ret;
++
++	/*
++	 *  Before Issue read buffer CMD for active active block,
++	 *  prepare the memory from memory pool.
++	 */
++	ret = ufshpb_evict_load_region(hpb, rsp_info);
++	if (ret) {
++		HPB_DEBUG(hpb, "region evict/load failed. ret %d", ret);
++		goto wakeup_ee_worker;
++	}
++
++	/*
++	 * If there is active region req, read buffer cmd issue.
++	 */
++	for (iter = 0; iter < rsp_info->active_cnt; iter++) {
++		region = rsp_info->active_list.region[iter];
++		subregion = rsp_info->active_list.subregion[iter];
++		cb = hpb->region_tbl + region;
++
++		if (region >= hpb->regions_per_lu ||
++		    subregion >= cb->subregion_count) {
++			HPB_DEBUG(hpb, "ufshpb issue-map %d - %d range error",
++				  region, subregion);
++			goto wakeup_ee_worker;
++		}
++
++		cp = cb->subregion_tbl + subregion;
++
++		/* if subregion_state set HPBSUBREGION_ISSUED,
++		 * active_page has already been added to list,
++		 * so it just ends function.
++		 * */
++
++		spin_lock(&hpb->hpb_lock);
++		if (cp->subregion_state == HPBSUBREGION_ISSUED) {
++			spin_unlock(&hpb->hpb_lock);
++			continue;
++		}
++
++		cp->subregion_state = HPBSUBREGION_ISSUED;
++
++		ret = ufshpb_clean_dirty_bitmap(hpb, cp);
++
++		spin_unlock(&hpb->hpb_lock);
++
++		if (ret)
++			continue;
++
++		if (hpb->force_map_req_disable) {
++			HPB_DEBUG(hpb, "map disable - return");
++			return;
++		}
++
++		ret = ufshpb_set_map_req(hpb, region, subregion, cp->mctx,
++					 rsp_info);
++		if (ret) {
++			HPB_DEBUG(hpb, "ufshpb_set_map_req error %d", ret);
++			goto wakeup_ee_worker;
++		}
++	}
++	return;
++
++wakeup_ee_worker:
++	hpb->hba->ufshpb_state = HPB_FAILED;
++	schedule_work(&hpb->hba->ufshpb_eh_work);
++	return;
++}
++
++/* routine : isr (ufs) */
++void ufshpb_rsp_upiu(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
++{
++	struct ufshpb_lu *hpb;
++	struct ufshpb_rsp_field *rsp_field;
++	struct ufshpb_rsp_info *rsp_info;
++	struct ufshpb_region *region;
++	int data_seg_len, num, blk_idx;
++
++	data_seg_len = be32_to_cpu(lrbp->ucd_rsp_ptr->header.dword_2)
++		& MASK_RSP_UPIU_DATA_SEG_LEN;
++
++	if (!data_seg_len) {
++		bool do_tasklet = false;
++
++		if (lrbp->lun >= UFS_UPIU_MAX_GENERAL_LUN)
++			return;
++
++		hpb = hba->ufshpb_lup[lrbp->lun];
++		if (!hpb)
++			return;
++
++		spin_lock(&hpb->rsp_list_lock);
++		do_tasklet = !list_empty(&hpb->lh_rsp_info);
++		spin_unlock(&hpb->rsp_list_lock);
++
++		if (do_tasklet)
++			tasklet_schedule(&hpb->ufshpb_tasklet);
++		return;
++	}
++
++	rsp_field = ufshpb_get_hpb_rsp(lrbp);
++
++	if ((SHIFT_BYTE_1(rsp_field->sense_data_len[0]) |
++	     SHIFT_BYTE_0(rsp_field->sense_data_len[1])) != DEV_SENSE_SEG_LEN ||
++	    rsp_field->desc_type != DEV_DES_TYPE ||
++	    rsp_field->additional_len != DEV_ADDITIONAL_LEN ||
++	    rsp_field->hpb_type == HPB_RSP_NONE ||
++	    rsp_field->active_region_cnt > MAX_ACTIVE_NUM ||
++	    rsp_field->inactive_region_cnt > MAX_INACTIVE_NUM)
++		return;
++
++	if (lrbp->lun >= UFS_UPIU_MAX_GENERAL_LUN) {
++		dev_warn(hba->dev, "lun is not general = %d", lrbp->lun);
++		return;
++	}
++
++	hpb = hba->ufshpb_lup[lrbp->lun];
++	if (!hpb) {
++		dev_warn(hba->dev, "%s UFS-LU%d is not UFSHPB LU\n", __func__,
++			 lrbp->lun);
++		return;
++	}
++
++	BUG_ON(!rsp_field);
++	BUG_ON(!lrbp);
++	BUG_ON(!lrbp->ucd_rsp_ptr);
++
++	HPB_DEBUG(hpb, "HPB-Info Noti: %d LUN: %d Seg-Len %d, Req_type = %d",
++		  rsp_field->hpb_type, lrbp->lun,
++		  be32_to_cpu(lrbp->ucd_rsp_ptr->header.dword_2) &
++		  MASK_RSP_UPIU_DATA_SEG_LEN, rsp_field->reserved);
++	atomic64_inc(&hpb->rb_noti_cnt);
++
++	if (!hpb->lu_hpb_enable) {
++		dev_warn(hba->dev, "UFSHPB(%s) LU(%d) is disabled.\n",
++			 __func__, lrbp->lun);
++		return;
++	}
++
++	spin_lock(&hpb->rsp_list_lock);
++	rsp_info = ufshpb_get_req_info(hpb);
++	spin_unlock(&hpb->rsp_list_lock);
++	if (!rsp_info)
++		return;
++
++	switch (rsp_field->hpb_type) {
++	case HPB_RSP_REQ_REGION_UPDATE:
++		WARN_ON(data_seg_len != DEV_DATA_SEG_LEN);
++		rsp_info->type = HPB_RSP_REQ_REGION_UPDATE;
++
++		rsp_info->rsp_start = ktime_to_ns(ktime_get());
++
++		for (num = 0; num < rsp_field->active_region_cnt; num++) {
++			blk_idx = num * PER_ACTIVE_INFO_BYTES;
++			rsp_info->active_list.region[num] =
++				SHIFT_BYTE_1(rsp_field->hpb_active_field[blk_idx + 0]) |
++				SHIFT_BYTE_0(rsp_field->hpb_active_field[blk_idx + 1]);
++			rsp_info->active_list.subregion[num] =
++				SHIFT_BYTE_1(rsp_field->hpb_active_field[blk_idx + 2]) |
++				SHIFT_BYTE_0(rsp_field->hpb_active_field[blk_idx + 3]);
++			HPB_DEBUG(hpb, "active num: %d, region: %d, "
++				  "subregion: %d", num + 1,
++				  rsp_info->active_list.region[num],
++				  rsp_info->active_list.subregion[num]);
++		}
++		rsp_info->active_cnt = num;
++
++		for (num = 0; num < rsp_field->inactive_region_cnt; num++) {
++			blk_idx = num * PER_INACTIVE_INFO_BYTES;
++			rsp_info->inactive_list.region[num] =
++				SHIFT_BYTE_1(rsp_field->hpb_inactive_field[blk_idx + 0]) |
++				SHIFT_BYTE_0(rsp_field->hpb_inactive_field[blk_idx + 1]);
++			HPB_DEBUG(hpb, "inactive num: %d, region: %d", num + 1,
++				  rsp_info->inactive_list.region[num]);
++		}
++		rsp_info->inactive_cnt = num;
++
++		TMSG(hpb, "Noti: #ACT %d, #INACT %d", rsp_info->active_cnt,
++		     rsp_info->inactive_cnt);
++
++		HPB_DEBUG(hpb, "active cnt: %d, inactive cnt: %d",
++			  rsp_info->active_cnt, rsp_info->inactive_cnt);
++
++		if (hpb->debug) {
++			list_for_each_entry(region, &hpb->lru_info.lru,
++					    list_region) {
++				HPB_DEBUG(hpb, "active list : %d (cnt: %d)",
++					  region->region, region->hit_count);
++			}
++		}
++
++		HPB_DEBUG(hpb, "add_list %p -> %p", rsp_info,
++			  &hpb->lh_rsp_info);
++		spin_lock(&hpb->rsp_list_lock);
++		list_add_tail(&rsp_info->list_rsp_info, &hpb->lh_rsp_info);
++		spin_unlock(&hpb->rsp_list_lock);
++
++		tasklet_schedule(&hpb->ufshpb_tasklet);
++		break;
++
++	default:
++		HPB_DEBUG(hpb, "hpb_type is not available : %d",
++			  rsp_field->hpb_type);
++		break;
++	}
++
++	return;
++}
++
++static int ufshpb_read_desc(struct ufs_hba *hba,
++			    u8 desc_id, u8 desc_index, u8 *desc_buf, u32 size)
++{
++	int retries, err = 0;
++	u8 selector = 1;
++
++	for (retries = 3; retries > 0; retries--) {
++		err = ufshcd_query_descriptor(hba, UPIU_QUERY_OPCODE_READ_DESC,
++					      desc_id, desc_index, selector,
++					      desc_buf, &size);
++		if (!err)
++			break;
++
++		dev_dbg(hba->dev, "%s reading Device Desc failed. err = %d\n",
++			__func__, err);
++	}
++
++	return err;
++}
++
++static int ufshpb_read_device_desc(struct ufs_hba *hba, u8 *desc_buf, u32 size)
++{
++	return ufshpb_read_desc(hba, QUERY_DESC_IDN_DEVICE, 0, desc_buf, size);
++}
++
++static int ufshpb_read_geo_desc(struct ufs_hba *hba, u8 *desc_buf, u32 size)
++{
++	return ufshpb_read_desc(hba, QUERY_DESC_IDN_GEOMETRY, 0, desc_buf, size);
++}
++
++static int
++ufshpb_read_unit_desc(struct ufs_hba *hba, int lun, u8 *desc_buf, u32 size)
++{
++	return ufshpb_read_desc(hba, QUERY_DESC_IDN_UNIT, lun, desc_buf, size);
++}
++
++static inline void ufshpb_add_subregion_to_req_list(struct ufshpb_lu *hpb,
++						    struct ufshpb_subregion *cp)
++{
++	list_add_tail(&cp->list_subregion, &hpb->lh_subregion_req);
++	cp->subregion_state = HPBSUBREGION_ISSUED;
++}
++
++static int ufshpb_execute_req(struct ufshpb_lu *hpb, unsigned char *cmd,
++			      struct ufshpb_subregion *cp)
++{
++	unsigned long flags;
++	struct request_queue *q;
++	char sense[SCSI_SENSE_BUFFERSIZE];
++	struct scsi_sense_hdr sshdr;
++	struct scsi_device *sdp;
++	struct ufs_hba *hba;
++	struct request req;
++	struct bio bio;
++	struct bio_vec *bvec;
++	int ret = 0;
++
++	hba = hpb->hba;
++
++	bvec = kmalloc(sizeof(struct bio_vec) * hpb->mpages_per_subregion,
++		       GFP_KERNEL);
++	if (!bvec)
++		return -ENOMEM;
++
++	if (!hba->sdev_ufs_lu[hpb->lun]) {
++		dev_warn(hba->dev, "%s UFSHPB cannot find scsi_device\n",
++			 __func__);
++		ret = -ENODEV;
++		goto mem_free_out;
++	}
++
++	sdp = hba->sdev_ufs_lu[hpb->lun];
++	if (!sdp) {
++		dev_warn(hba->dev, "%s UFSHPB cannot find scsi_device\n",
++			 __func__);
++		ret = -ENODEV;
++		goto mem_free_out;
++	}
++
++	spin_lock_irqsave(hba->host->host_lock, flags);
++	ret = scsi_device_get(sdp);
++	if (!ret && !scsi_device_online(sdp)) {
++		spin_unlock_irqrestore(hba->host->host_lock, flags);
++		ret = -ENODEV;
++		scsi_device_put(sdp);
++		goto mem_free_out;
++	}
++	spin_unlock_irqrestore(hba->host->host_lock, flags);
++
++	q = sdp->request_queue;
++
++	ret = ufshpb_add_bio_page(hpb, q, &bio, bvec, cp->mctx);
++	if (ret) {
++		scsi_device_put(sdp);
++		goto mem_free_out;
++	}
++
++	blk_rq_init(q, &req);
++	blk_rq_append_bio(q, &req, &bio);
++
++	req.cmd_len = COMMAND_SIZE(cmd[0]);
++	memcpy(req.cmd, cmd, req.cmd_len);
++	req.sense = sense;
++	req.sense_len = 0;
++	req.retries = 3;
++	req.timeout = msecs_to_jiffies(10000);
++	req.cmd_type = REQ_TYPE_BLOCK_PC;
++	req.cmd_flags = REQ_QUIET | REQ_PREEMPT;
++
++	blk_execute_rq(q, NULL, &req, 1);
++	if (req.errors) {
++		ret = -EIO;
++		scsi_normalize_sense(req.sense, SCSI_SENSE_BUFFERSIZE, &sshdr);
++		ERR_MSG("code %x sense_key %x asc %x ascq %x",
++			sshdr.response_code, sshdr.sense_key, sshdr.asc,
++			sshdr.ascq);
++		ERR_MSG("byte4 %x byte5 %x byte6 %x additional_len %x",
++			sshdr.byte4, sshdr.byte5, sshdr.byte6,
++			sshdr.additional_length);
++		spin_lock_bh(&hpb->hpb_lock);
++		ufshpb_error_active_subregion(hpb, cp);
++		spin_unlock_bh(&hpb->hpb_lock);
++	} else {
++		ret = 0;
++		spin_lock_bh(&hpb->hpb_lock);
++		ufshpb_clean_dirty_bitmap(hpb, cp);
++		spin_unlock_bh(&hpb->hpb_lock);
++	}
++	scsi_device_put(sdp);
++mem_free_out:
++	kfree(bvec);
++	return ret;
++}
++
++static int ufshpb_issue_map_req_from_list(struct ufshpb_lu *hpb)
++{
++	struct ufshpb_subregion *cp, *next_cp;
++	int ret;
++
++	LIST_HEAD(req_list);
++
++	spin_lock_bh(&hpb->hpb_lock);
++	list_splice_init(&hpb->lh_subregion_req,
++			 &req_list);
++	spin_unlock_bh(&hpb->hpb_lock);
++
++	list_for_each_entry_safe(cp, next_cp, &req_list, list_subregion) {
++		unsigned char cmd[10] = { 0 };
++		unsigned long long debug_ppn_0, debug_ppn_65535;
++
++		ufshpb_set_read_buf_cmd(cmd, cp->region, cp->subregion,
++					hpb->subregion_mem_size);
++
++		debug_ppn_0 = ufshpb_get_ppn(cp->mctx, 0);
++		debug_ppn_65535 = ufshpb_get_ppn(cp->mctx, 65535);
++
++		HPB_DEBUG(hpb, "ISSUE READ_BUFFER : %d - %d ( %llx ~ %llx )",
++			  cp->region, cp->subregion,
++			  debug_ppn_0, debug_ppn_65535);
++
++		TMSG(hpb, "Noti: I RB %d - %d",	cp->region, cp->subregion);
++
++		ret = ufshpb_execute_req(hpb, cmd, cp);
++		if (ret < 0) {
++			ERR_MSG("region %d sub %d failed with err %d",
++				cp->region, cp->subregion, ret);
++			continue;
++		}
++
++		debug_ppn_0 = ufshpb_get_ppn(cp->mctx, 0);
++		debug_ppn_65535 = ufshpb_get_ppn(cp->mctx, 65535);
++
++		TMSG(hpb, "Noti: C RB %d - %d",	cp->region, cp->subregion);
++
++		HPB_DEBUG(hpb, "COMPL READ_BUFFER : %d - %d ( %llx ~ %llx )",
++			  cp->region, cp->subregion,
++			  debug_ppn_0, debug_ppn_65535);
++
++		spin_lock_bh(&hpb->hpb_lock);
++		ufshpb_clean_active_subregion(hpb, cp);
++		list_del_init(&cp->list_subregion);
++		spin_unlock_bh(&hpb->hpb_lock);
++	}
++
++	return 0;
++}
++
++static void ufshpb_work_handler(struct work_struct *work)
++{
++	struct ufshpb_lu *hpb;
++	int ret;
++
++	hpb = container_of(work, struct ufshpb_lu, ufshpb_work);
++	HPB_DEBUG(hpb, "worker start");
++
++	if (!list_empty(&hpb->lh_subregion_req)) {
++		ret = ufshpb_issue_map_req_from_list(hpb);
++		/*
++		 * if its function failed at init time,
++		 * ufshpb-device will request map-req,
++		 * so it is not critical-error, and just finish work-handler
++		 */
++		if (ret)
++			HPB_DEBUG(hpb, "failed map-issue. ret %d", ret);
++	}
++
++	HPB_DEBUG(hpb, "worker end");
++	return;
++}
++
++static void ufshpb_retry_work_handler(struct work_struct *work)
++{
++	struct ufshpb_lu *hpb;
++	struct delayed_work *dwork = to_delayed_work(work);
++	struct ufshpb_map_req *map_req;
++	int ret = 0;
++
++	LIST_HEAD(retry_list);
++
++	hpb = container_of(dwork, struct ufshpb_lu, ufshpb_retry_work);
++	HPB_DEBUG(hpb, "retry worker start");
++
++
++	spin_lock_bh(&hpb->hpb_lock);
++	list_splice_init(&hpb->lh_map_req_retry, &retry_list);
++	spin_unlock_bh(&hpb->hpb_lock);
++
++	while (1) {
++		map_req = list_first_entry_or_null(&retry_list,
++						   struct ufshpb_map_req,
++						   list_map_req);
++		if (!map_req) {
++			HPB_DEBUG(hpb, "There is no map_req");
++			break;
++		}
++		list_del(&map_req->list_map_req);
++
++		map_req->retry_cnt++;
++
++		ret = ufshpb_map_req_issue(hpb, hpb->hba->sdev_ufs_lu[hpb->lun]->request_queue,
++					   map_req);
++		if (ret) {
++			HPB_DEBUG(hpb, "ufshpb_set_map_req error %d", ret);
++			goto wakeup_ee_worker;
++		}
++	}
++	HPB_DEBUG(hpb, "worker end");
++	return;
++
++wakeup_ee_worker:
++	hpb->hba->ufshpb_state = HPB_FAILED;
++	schedule_work(&hpb->hba->ufshpb_eh_work);
++	return;
++}
++
++static void ufshpb_tasklet_fn(unsigned long private)
++{
++	struct ufshpb_lu *hpb = (struct ufshpb_lu *)private;
++	struct ufshpb_rsp_info *rsp_info;
++	unsigned long flags;
++
++	while (1) {
++		spin_lock_irqsave(&hpb->rsp_list_lock, flags);
++		rsp_info = list_first_entry_or_null(&hpb->lh_rsp_info,
++						    struct ufshpb_rsp_info,
++						    list_rsp_info);
++		if (!rsp_info) {
++			spin_unlock_irqrestore(&hpb->rsp_list_lock, flags);
++			break;
++		}
++
++		rsp_info->rsp_tasklet_enter = ktime_to_ns(ktime_get());
++
++		list_del_init(&rsp_info->list_rsp_info);
++		spin_unlock_irqrestore(&hpb->rsp_list_lock, flags);
++
++		switch (rsp_info->type) {
++		case HPB_RSP_REQ_REGION_UPDATE:
++			ufshpb_rsp_map_cmd_req(hpb, rsp_info);
++			break;
++		default:
++			break;
++		}
++
++		spin_lock_irqsave(&hpb->rsp_list_lock, flags);
++		HPB_DEBUG(hpb, "add_list %p -> %p",
++			  &hpb->lh_rsp_info_free, rsp_info);
++		list_add_tail(&rsp_info->list_rsp_info, &hpb->lh_rsp_info_free);
++		spin_unlock_irqrestore(&hpb->rsp_list_lock, flags);
++	}
++	return;
++}
++
++static void ufshpb_init_constant(void)
++{
++	sects_per_blk_shift = ffs(BLOCK) - ffs(SECTOR);
++	INIT_INFO("sects_per_blk_shift: %u %u",
++		  sects_per_blk_shift, ffs(SECTORS_PER_BLOCK) - 1);
++
++	bits_per_dword_shift = ffs(BITS_PER_DWORD) - 1;
++	bits_per_dword_mask = BITS_PER_DWORD - 1;
++	INIT_INFO("bits_per_dword %u shift %u mask 0x%X",
++		  BITS_PER_DWORD, bits_per_dword_shift, bits_per_dword_mask);
++
++	bits_per_byte_shift = ffs(BITS_PER_BYTE) - 1;
++	INIT_INFO("bits_per_byte %u shift %u",
++		  BITS_PER_BYTE, bits_per_byte_shift);
++}
++
++static inline void ufshpb_req_mempool_remove(struct ufshpb_lu *hpb)
++{
++	kfree(hpb->rsp_info);
++	kfree(hpb->map_req);
++}
++
++static void ufshpb_table_mempool_remove(struct ufshpb_lu *hpb)
++{
++	struct ufshpb_map_ctx *mctx, *next;
++	int i;
++
++	/*
++	 * the mctx in the lh_map_ctx has been allocated completely.
++	 */
++	list_for_each_entry_safe(mctx, next, &hpb->lh_map_ctx, list_table) {
++		for (i = 0; i < hpb->mpages_per_subregion; i++)
++			__free_page(mctx->m_page[i]);
++
++		vfree(mctx->ppn_dirty);
++		kfree(mctx->m_page);
++		kfree(mctx);
++		alloc_mctx--;
++	}
++}
++
++static int ufshpb_init_pinned_active_block(struct ufshpb_lu *hpb,
++					   struct ufshpb_region *cb)
++{
++	struct ufshpb_subregion *cp;
++	int subregion, j;
++	int err = 0;
++
++	for (subregion = 0; subregion < cb->subregion_count; subregion++) {
++		cp = cb->subregion_tbl + subregion;
++
++		cp->mctx = ufshpb_get_map_ctx(hpb, &err);
++		if (err) {
++			ERR_MSG("get mctx failed. err %d subregion %d "
++				"free_table %d", err, subregion,
++				hpb->debug_free_table);
++			goto release;
++		}
++		spin_lock_bh(&hpb->hpb_lock);
++		ufshpb_add_subregion_to_req_list(hpb, cp);
++		spin_unlock_bh(&hpb->hpb_lock);
++	}
++
++	cb->region_state = HPBREGION_PINNED;
++
++	return 0;
++
++release:
++	for (j = 0; j < subregion; j++) {
++		cp = cb->subregion_tbl + j;
++		ufshpb_put_map_ctx(hpb, cp->mctx);
++	}
++
++	return err;
++}
++
++static inline bool ufshpb_is_hpbregion_pinned(struct ufshpb_lu_desc *lu_desc,
++					      int region)
++{
++	if (lu_desc->lu_hpb_pinned_end_offset != -1 &&
++	    region >= lu_desc->hpb_pinned_region_startidx &&
++	    region <= lu_desc->lu_hpb_pinned_end_offset)
++		return true;
++
++	return false;
++}
++
++static inline void ufshpb_init_jobs(struct ufshpb_lu *hpb)
++{
++	INIT_WORK(&hpb->ufshpb_work, ufshpb_work_handler);
++	INIT_DELAYED_WORK(&hpb->ufshpb_retry_work, ufshpb_retry_work_handler);
++	tasklet_init(&hpb->ufshpb_tasklet, ufshpb_tasklet_fn,
++		     (unsigned long)hpb);
++}
++
++static inline void ufshpb_cancel_jobs(struct ufshpb_lu *hpb)
++{
++	cancel_work_sync(&hpb->ufshpb_work);
++	cancel_delayed_work_sync(&hpb->ufshpb_retry_work);
++	tasklet_kill(&hpb->ufshpb_tasklet);
++}
++
++static void ufshpb_init_subregion_tbl(struct ufshpb_lu *hpb,
++				      struct ufshpb_region *cb)
++{
++	int subregion;
++
++	for (subregion = 0; subregion < cb->subregion_count; subregion++) {
++		struct ufshpb_subregion *cp = cb->subregion_tbl + subregion;
++
++		cp->region = cb->region;
++		cp->subregion = subregion;
++		cp->subregion_state = HPBSUBREGION_UNUSED;
++	}
++}
++
++static inline int ufshpb_alloc_subregion_tbl(struct ufshpb_lu *hpb,
++					     struct ufshpb_region *cb,
++					     int subregion_count)
++{
++	cb->subregion_tbl =
++		kzalloc(sizeof(struct ufshpb_subregion) * subregion_count,
++			GFP_KERNEL);
++	if (!cb->subregion_tbl)
++		return -ENOMEM;
++
++	cb->subregion_count = subregion_count;
++	INIT_INFO("region %d subregion_count %d active_page_table bytes %lu",
++		  cb->region, subregion_count,
++		  sizeof(struct ufshpb_subregion *) *
++		  hpb->subregions_per_region);
++
++	return 0;
++}
++
++static int ufshpb_table_mempool_init(struct ufshpb_lu *hpb,
++				     int num_regions, int subregions_per_region,
++				     int entry_count, int entry_byte)
++{
++	int i, j, k;
++	struct ufshpb_map_ctx *mctx = NULL;
++
++	INIT_LIST_HEAD(&hpb->lh_map_ctx);
++
++	for (i = 0; i < num_regions * subregions_per_region; i++) {
++		mctx = kmalloc(sizeof(struct ufshpb_map_ctx), GFP_KERNEL);
++		if (!mctx)
++			goto release_mem;
++
++		mctx->m_page = kzalloc(sizeof(struct page *) *
++				       hpb->mpages_per_subregion,
++				       GFP_KERNEL);
++		if (!mctx->m_page)
++			goto release_mem;
++
++		mctx->ppn_dirty = vzalloc(entry_count >> bits_per_byte_shift);
++		if (!mctx->ppn_dirty)
++			goto release_mem;
++
++		for (j = 0; j < hpb->mpages_per_subregion; j++) {
++			mctx->m_page[j] = alloc_page(GFP_KERNEL | __GFP_ZERO);
++			if (!mctx->m_page[j]) {
++				for (k = 0; k < j; k++)
++					kfree(mctx->m_page[k]);
++				goto release_mem;
++			}
++		}
++		INIT_INFO("[%d] mctx->m_page %p get_order %d", i,
++			  mctx->m_page, get_order(hpb->mpages_per_subregion));
++
++		INIT_LIST_HEAD(&mctx->list_table);
++		list_add(&mctx->list_table, &hpb->lh_map_ctx);
++
++		hpb->debug_free_table++;
++	}
++
++	alloc_mctx = num_regions * subregions_per_region;
++	INIT_INFO("number of mctx %d %d %d. debug_free_table %d",
++		  num_regions * subregions_per_region, num_regions,
++		  subregions_per_region, hpb->debug_free_table);
++	return 0;
++
++release_mem:
++	/*
++	 * mctxs already added in lh_map_ctx will be removed
++	 * in the caller function.
++	 */
++	if (mctx) {
++		kfree(mctx->m_page);
++		vfree(mctx->ppn_dirty);
++		kfree(mctx);
++	}
++	return -ENOMEM;
++}
++
++static int ufshpb_req_mempool_init(struct ufshpb_lu *hpb, int num_pinned_rgn,
++				   int queue_depth)
++{
++	struct ufs_hba *hba;
++	struct ufshpb_rsp_info *rsp_info = NULL;
++	struct ufshpb_map_req *map_req = NULL;
++	int i, map_req_cnt = 0;
++
++	hba = hpb->hba;
++
++	if (!queue_depth) {
++		queue_depth = hba->nutrs;
++		INIT_INFO("lu_queue_depth is 0. we use device's queue info.");
++		INIT_INFO("hba->nutrs = %d", hba->nutrs);
++	}
++
++	INIT_LIST_HEAD(&hpb->lh_rsp_info_free);
++	INIT_LIST_HEAD(&hpb->lh_map_req_free);
++	INIT_LIST_HEAD(&hpb->lh_map_req_retry);
++
++	hpb->rsp_info = kzalloc(sizeof(struct ufshpb_rsp_info) * queue_depth,
++				GFP_KERNEL);
++	if (!hpb->rsp_info)
++		goto release_mem;
++
++	map_req_cnt = max((num_pinned_rgn * hpb->subregions_per_region * 2),
++			  queue_depth);
++
++	hpb->map_req = kzalloc(sizeof(struct ufshpb_map_req) * map_req_cnt,
++			       GFP_KERNEL);
++	if (!hpb->map_req)
++		goto release_mem;
++
++	for (i = 0; i < queue_depth; i++) {
++		rsp_info = hpb->rsp_info + i;
++		INIT_LIST_HEAD(&rsp_info->list_rsp_info);
++		list_add_tail(&rsp_info->list_rsp_info, &hpb->lh_rsp_info_free);
++	}
++
++	for (i = 0; i < map_req_cnt; i++) {
++		map_req = hpb->map_req + i;
++		INIT_LIST_HEAD(&map_req->list_map_req);
++		list_add_tail(&map_req->list_map_req, &hpb->lh_map_req_free);
++	}
++
++	return 0;
++
++release_mem:
++	kfree(hpb->rsp_info);
++	return -ENOMEM;
++}
++
++static void ufshpb_init_lu_constant(struct ufshpb_lu *hpb,
++				    struct ufshpb_lu_desc *lu_desc,
++				    struct ufshpb_func_desc *func_desc)
++{
++	unsigned long long region_unit_size, region_mem_size;
++	int entries_per_region;
++
++	/*	From descriptors	*/
++	region_unit_size = (unsigned long long)
++		SECTOR * (0x01 << func_desc->hpb_region_size);
++	region_mem_size = region_unit_size / BLOCK * HPB_ENTRY_SIZE;
++
++	hpb->subregion_unit_size = (unsigned long long)
++		SECTOR * (0x01 << func_desc->hpb_subregion_size);
++	hpb->subregion_mem_size =
++		hpb->subregion_unit_size / BLOCK * HPB_ENTRY_SIZE;
++
++	hpb->hpb_ver = func_desc->hpb_ver;
++	hpb->lu_max_active_regions = lu_desc->lu_max_active_hpb_regions;
++	hpb->lru_info.max_lru_active_cnt =
++		lu_desc->lu_max_active_hpb_regions
++		- lu_desc->lu_num_hpb_pinned_regions;
++
++	/* relation : lu <-> region <-> sub region <-> entry */
++	hpb->lu_num_blocks = lu_desc->lu_logblk_cnt;
++	entries_per_region = region_mem_size / HPB_ENTRY_SIZE;
++	hpb->entries_per_subregion = hpb->subregion_mem_size / HPB_ENTRY_SIZE;
++	hpb->subregions_per_region = region_mem_size / hpb->subregion_mem_size;
++
++	/*
++	 * 1. regions_per_lu = (lu_num_blocks * 4096) / region_unit_size
++	 *		= (lu_num_blocks * HPB_ENTRY_SIZE) / region_mem_size
++	 *		= lu_num_blocks / (region_mem_size / HPB_ENTRY_SIZE)
++	 *
++	 * 2. regions_per_lu = lu_num_blocks / subregion_mem_size (is trik...)
++	 *    if HPB_ENTRY_SIZE != subregions_per_region, it is error.
++	 */
++	hpb->regions_per_lu =
++		((unsigned long long)hpb->lu_num_blocks
++		 + (region_mem_size / HPB_ENTRY_SIZE) - 1)
++		/ (region_mem_size / HPB_ENTRY_SIZE);
++	hpb->subregions_per_lu =
++		((unsigned long long)hpb->lu_num_blocks
++		 + (hpb->subregion_mem_size / HPB_ENTRY_SIZE) - 1)
++		/ (hpb->subregion_mem_size / HPB_ENTRY_SIZE);
++
++	/* mempool info */
++	hpb->mpage_bytes = OS_PAGE_SIZE;
++	hpb->mpages_per_subregion = hpb->subregion_mem_size / hpb->mpage_bytes;
++
++	/* Bitmask Info. */
++	hpb->dwords_per_subregion = hpb->entries_per_subregion / BITS_PER_DWORD;
++	hpb->entries_per_region_shift = ffs(entries_per_region) - 1;
++	hpb->entries_per_region_mask = entries_per_region - 1;
++	hpb->entries_per_subregion_shift = ffs(hpb->entries_per_subregion) - 1;
++	hpb->entries_per_subregion_mask = hpb->entries_per_subregion - 1;
++
++	INIT_INFO("===== From Device Descriptor! =====");
++	INIT_INFO("hpb_region_size = %d, hpb_subregion_size = %d",
++		  func_desc->hpb_region_size, func_desc->hpb_subregion_size);
++	INIT_INFO("=====   Constant Values(LU)   =====");
++	INIT_INFO("region_unit_size = %lld, region_mem_size %lld",
++		  region_unit_size, region_mem_size);
++	INIT_INFO("subregion_unit_size = %lld, subregion_mem_size %d",
++		  hpb->subregion_unit_size, hpb->subregion_mem_size);
++
++	INIT_INFO("lu_num_blocks = %d, regions_per_lu = %d, "
++		  "subregions_per_lu = %d", hpb->lu_num_blocks,
++		  hpb->regions_per_lu, hpb->subregions_per_lu);
++
++	INIT_INFO("subregions_per_region = %d", hpb->subregions_per_region);
++	INIT_INFO("entries_per_region %u shift %u mask 0x%X",
++		  entries_per_region, hpb->entries_per_region_shift,
++		  hpb->entries_per_region_mask);
++	INIT_INFO("entries_per_subregion %u shift %u mask 0x%X",
++		  hpb->entries_per_subregion, hpb->entries_per_subregion_shift,
++		  hpb->entries_per_subregion_mask);
++	INIT_INFO("mpages_per_subregion : %d", hpb->mpages_per_subregion);
++	INIT_INFO("===================================\n");
++}
++
++static int ufshpb_lu_hpb_init(struct ufs_hba *hba, struct ufshpb_lu *hpb,
++			      struct ufshpb_func_desc *func_desc,
++			      struct ufshpb_lu_desc *lu_desc, int lun)
++{
++	struct ufshpb_region *region_table, *cb;
++	struct ufshpb_subregion *cp;
++	int region, subregion;
++	int total_subregion_count, subregion_count;
++	bool do_work_handler;
++	int ret, j;
++
++	hpb->hba = hba;
++	hpb->lun = lun;
++	hpb->debug = false;
++	hpb->lu_hpb_enable = true;
++
++	ufshpb_init_lu_constant(hpb, lu_desc, func_desc);
++
++	region_table =
++		kzalloc(sizeof(struct ufshpb_region) * hpb->regions_per_lu,
++			GFP_KERNEL);
++	if (!region_table)
++		goto out;
++
++	INIT_INFO("active_block_table bytes: %lu",
++		  (sizeof(struct ufshpb_region) * hpb->regions_per_lu));
++
++	hpb->region_tbl = region_table;
++
++	spin_lock_init(&hpb->hpb_lock);
++	spin_lock_init(&hpb->rsp_list_lock);
++
++	/* init lru information*/
++	INIT_LIST_HEAD(&hpb->lru_info.lru);
++	hpb->lru_info.selection_type = LRU;
++
++	INIT_LIST_HEAD(&hpb->lh_subregion_req);
++	INIT_LIST_HEAD(&hpb->lh_rsp_info);
++	INIT_LIST_HEAD(&hpb->lh_map_ctx);
++
++	ret = ufshpb_table_mempool_init(hpb, lu_desc->lu_max_active_hpb_regions,
++					hpb->subregions_per_region,
++					hpb->entries_per_subregion,
++					HPB_ENTRY_SIZE);
++	if (ret) {
++		ERR_MSG("ppn table mempool init fail!");
++		goto release_mempool;
++	}
++
++	ret = ufshpb_req_mempool_init(hpb, lu_desc->lu_num_hpb_pinned_regions,
++				      lu_desc->lu_queue_depth);
++	if (ret) {
++		ERR_MSG("rsp_info_mempool init fail!");
++		goto release_mempool;
++	}
++
++	total_subregion_count = hpb->subregions_per_lu;
++
++	ufshpb_init_jobs(hpb);
++
++	INIT_INFO("total_subregion_count: %d", total_subregion_count);
++	for (region = 0, subregion_count = 0,
++	     total_subregion_count = hpb->subregions_per_lu;
++	     region < hpb->regions_per_lu;
++	     region++, total_subregion_count -= subregion_count) {
++		cb = region_table + region;
++		cb->region = region;
++
++		/* init lru region information*/
++		INIT_LIST_HEAD(&cb->list_region);
++		cb->hit_count = 0;
++
++		subregion_count = min(total_subregion_count,
++				      hpb->subregions_per_region);
++		INIT_INFO("total: %d subregion_count: %d",
++			  total_subregion_count, subregion_count);
++
++		ret = ufshpb_alloc_subregion_tbl(hpb, cb, subregion_count);
++		if (ret)
++			goto release_region_cp;
++		ufshpb_init_subregion_tbl(hpb, cb);
++
++		if (ufshpb_is_hpbregion_pinned(lu_desc, region)) {
++			INIT_INFO("region: %d PINNED %d ~ %d",
++				  region, lu_desc->hpb_pinned_region_startidx,
++				  lu_desc->lu_hpb_pinned_end_offset);
++			ret = ufshpb_init_pinned_active_block(hpb, cb);
++			if (ret)
++				goto release_region_cp;
++
++			do_work_handler = true;
++		} else {
++			INIT_INFO("region: %d inactive", cb->region);
++			cb->region_state = HPBREGION_INACTIVE;
++		}
++	}
++
++	if (total_subregion_count != 0) {
++		ERR_MSG("error total_subregion_count: %d",
++			total_subregion_count);
++		goto release_region_cp;
++	}
++
++	if (do_work_handler)
++		schedule_work(&hpb->ufshpb_work);
++
++	/*
++	 * even if creating sysfs failed, ufshpb could run normally.
++	 * so we don't deal with error handling
++	 * */
++	ufshpb_create_sysfs(hba, hpb);
++	return 0;
++
++release_region_cp:
++	for (j = 0; j < region; j++) {
++		cb = region_table + j;
++		if (cb->subregion_tbl) {
++			for (subregion = 0; subregion < cb->subregion_count; subregion++) {
++				cp = cb->subregion_tbl + subregion;
++
++				if (cp->mctx)
++					ufshpb_put_map_ctx(hpb, cp->mctx);
++			}
++			kfree(cb->subregion_tbl);
++		}
++	}
++
++release_mempool:
++	ufshpb_req_mempool_remove(hpb);
++
++	ufshpb_table_mempool_remove(hpb);
++
++	kfree(region_table);
++out:
++	hpb->lu_hpb_enable = false;
++	return ret;
++}
++
++static int ufshpb_get_hpb_lu_desc(struct ufs_hba *hba,
++				  struct ufshpb_lu_desc *lu_desc, int lun)
++{
++	int ret;
++	u8 logical_buf[UFSHPB_QUERY_DESC_UNIT_MAX_SIZE] = { 0 };
++
++	ret = ufshpb_read_unit_desc(hba, lun, logical_buf,
++				    UFSHPB_QUERY_DESC_UNIT_MAX_SIZE);
++	if (ret) {
++		ERR_MSG("read unit desc failed. ret %d", ret);
++		return ret;
++	}
++
++	lu_desc->lu_queue_depth = logical_buf[UNIT_DESC_PARAM_LU_Q_DEPTH];
++
++	lu_desc->lu_logblk_size = logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_SIZE];
++	lu_desc->lu_logblk_cnt =
++		SHIFT_BYTE_7((u64)logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_COUNT]) |
++		SHIFT_BYTE_6((u64)logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_COUNT + 1]) |
++		SHIFT_BYTE_5((u64)logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_COUNT + 2]) |
++		SHIFT_BYTE_4((u64)logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_COUNT + 3]) |
++		SHIFT_BYTE_3(logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_COUNT + 4]) |
++		SHIFT_BYTE_2(logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_COUNT + 5]) |
++		SHIFT_BYTE_1(logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_COUNT + 6]) |
++		SHIFT_BYTE_0(logical_buf[UNIT_DESC_PARAM_LOGICAL_BLK_COUNT + 7]);
++
++	if (logical_buf[UNIT_DESC_PARAM_LU_ENABLE] == 0x02)
++		lu_desc->lu_hpb_enable = true;
++	else
++		lu_desc->lu_hpb_enable = false;
++
++	lu_desc->lu_max_active_hpb_regions =
++		SHIFT_BYTE_1(logical_buf[UNIT_DESC_HPB_LU_MAX_ACTIVE_REGIONS]) |
++		SHIFT_BYTE_0(logical_buf[UNIT_DESC_HPB_LU_MAX_ACTIVE_REGIONS + 1]);
++	lu_desc->hpb_pinned_region_startidx =
++		SHIFT_BYTE_1(logical_buf[UNIT_DESC_HPB_LU_PIN_REGION_START_OFFSET]) |
++		SHIFT_BYTE_0(logical_buf[UNIT_DESC_HPB_LU_PIN_REGION_START_OFFSET + 1]);
++	lu_desc->lu_num_hpb_pinned_regions =
++		SHIFT_BYTE_1(logical_buf[UNIT_DESC_HPB_LU_NUM_PIN_REGIONS]) |
++		SHIFT_BYTE_0(logical_buf[UNIT_DESC_HPB_LU_NUM_PIN_REGIONS + 1]);
++
++	INIT_INFO("LUN(%d) [0A] bLogicalBlockSize %d",
++		  lun, lu_desc->lu_logblk_size);
++	INIT_INFO("LUN(%d) [0B] qLogicalBlockCount %llu",
++		  lun, lu_desc->lu_logblk_cnt);
++	INIT_INFO("LUN(%d) [03] bLuEnable %d", lun, lu_desc->lu_hpb_enable);
++	INIT_INFO("LUN(%d) [06] bLuQueueDepth %d",
++		  lun, lu_desc->lu_queue_depth);
++	INIT_INFO("LUN(%d) [23:24] wLUMaxActiveHPBRegions %d",
++		  lun, lu_desc->lu_max_active_hpb_regions);
++	INIT_INFO("LUN(%d) [25:26] wHPBPinnedRegionStartIdx %d",
++		  lun, lu_desc->hpb_pinned_region_startidx);
++	INIT_INFO("LUN(%d) [27:28] wNumHPBPinnedRegions %d",
++		  lun, lu_desc->lu_num_hpb_pinned_regions);
++
++	if (lu_desc->lu_num_hpb_pinned_regions > 0) {
++		lu_desc->lu_hpb_pinned_end_offset =
++			lu_desc->hpb_pinned_region_startidx +
++			lu_desc->lu_num_hpb_pinned_regions - 1;
++	} else
++		lu_desc->lu_hpb_pinned_end_offset = -1;
++
++	INIT_INFO("LUN(%d) PINNED Start %d End %d",
++		  lun, lu_desc->hpb_pinned_region_startidx,
++		  lu_desc->lu_hpb_pinned_end_offset);
++
++	return 0;
++}
++
++static int ufshpb_read_dev_desc_support(struct ufs_hba *hba,
++					struct ufshpb_func_desc *desc)
++{
++	u8 desc_buf[UFSHPB_QUERY_DESC_DEVICE_MAX_SIZE];
++	int err;
++
++	err = ufshpb_read_device_desc(hba, desc_buf,
++				      UFSHPB_QUERY_DESC_DEVICE_MAX_SIZE);
++	if (err)
++		return err;
++
++	if (desc_buf[DEVICE_DESC_PARAM_FEAT_SUP] &
++	    UFS_FEATURE_SUPPORT_HPB_BIT) {
++		INIT_INFO("bUFSFeaturesSupport: HPB is set");
++	} else {
++		INIT_INFO("bUFSFeaturesSupport: HPB not support");
++		return -ENODEV;
++	}
++
++	desc->lu_cnt = desc_buf[DEVICE_DESC_PARAM_NUM_LU];
++	INIT_INFO("device lu count %d", desc->lu_cnt);
++
++	desc->hpb_ver =
++		(u16) SHIFT_BYTE_1(desc_buf[DEVICE_DESC_PARAM_HPB_VER]) |
++		(u16) SHIFT_BYTE_0(desc_buf[DEVICE_DESC_PARAM_HPB_VER + 1]);
++
++	INIT_INFO("HPB Version = %.2x %.2x",
++		  GET_BYTE_1(desc->hpb_ver), GET_BYTE_0(desc->hpb_ver));
++	return 0;
++}
++
++static int ufshpb_read_geo_desc_support(struct ufs_hba *hba,
++					struct ufshpb_func_desc *desc)
++{
++	int err;
++	u8 geometry_buf[UFSHPB_QUERY_DESC_GEOMETRY_MAX_SIZE];
++
++	err = ufshpb_read_geo_desc(hba, geometry_buf,
++				   UFSHPB_QUERY_DESC_GEOMETRY_MAX_SIZE);
++	if (err)
++		return err;
++
++	desc->hpb_region_size = geometry_buf[GEOMETRY_DESC_HPB_REGION_SIZE];
++	desc->hpb_number_lu = geometry_buf[GEOMETRY_DESC_HPB_NUMBER_LU];
++	desc->hpb_subregion_size = geometry_buf[GEOMETRY_DESC_HPB_SUBREGION_SIZE];
++	desc->hpb_device_max_active_regions =
++		(u16) SHIFT_BYTE_1(geometry_buf[GEOMETRY_DESC_HPB_DEVICE_MAX_ACTIVE_REGIONS]) |
++		(u16) SHIFT_BYTE_0(geometry_buf[GEOMETRY_DESC_HPB_DEVICE_MAX_ACTIVE_REGIONS + 1]);
++
++	INIT_INFO("[48] bHPBRegionSiz %u", desc->hpb_region_size);
++	INIT_INFO("[49] bHPBNumberLU %u", desc->hpb_number_lu);
++	INIT_INFO("[4A] bHPBSubRegionSize %u", desc->hpb_subregion_size);
++	INIT_INFO("[4B:4C] wDeviceMaxActiveHPBRegions %u",
++		  desc->hpb_device_max_active_regions);
++
++	if (desc->hpb_number_lu == 0) {
++		dev_warn(hba->dev, "UFSHPB) HPB is not supported\n");
++		return -ENODEV;
++	}
++
++	return 0;
++}
++
++static int ufshpb_init(struct ufs_hba *hba)
++{
++	struct ufshpb_func_desc func_desc;
++	int lun, ret = 0, i;
++	int hpb_dev = 0;
++
++	ret = ufshpb_read_dev_desc_support(hba, &func_desc);
++	if (ret || func_desc.hpb_ver != UFSHPB_VER) {
++		INIT_INFO("Driver = %.2x %.2x, Device = %.2x %.2x",
++			  GET_BYTE_1(UFSHPB_VER), GET_BYTE_0(UFSHPB_VER),
++			  GET_BYTE_1(func_desc.hpb_ver),
++			  GET_BYTE_0(func_desc.hpb_ver));
++		goto out_state;
++	}
++
++	ret = ufshpb_read_geo_desc_support(hba, &func_desc);
++	if (ret)
++		goto out_state;
++
++	ufshpb_init_constant();
++
++	for (lun = 0; lun < UFS_UPIU_MAX_GENERAL_LUN; lun++) {
++		struct ufshpb_lu_desc lu_desc;
++		int ret;
++
++		hba->ufshpb_lup[lun] = NULL;
++
++		ret = ufshpb_get_hpb_lu_desc(hba, &lu_desc, lun);
++		if (ret)
++			goto out_state;
++
++		if (lu_desc.lu_hpb_enable == false) {
++			INIT_INFO("===== LU %d is hpb-disabled.", lun);
++			continue;
++		}
++
++		hba->ufshpb_lup[lun] =
++			kzalloc(sizeof(struct ufshpb_lu), GFP_KERNEL);
++		if (!hba->ufshpb_lup[lun])
++			goto out_free_mem;
++
++		ret = ufshpb_lu_hpb_init(hba, hba->ufshpb_lup[lun],
++					 &func_desc, &lu_desc, lun);
++		if (ret) {
++			if (ret == -ENODEV)
++				continue;
++			else
++				goto out_free_mem;
++		}
++		hpb_dev++;
++	}
++
++	if (hpb_dev == 0) {
++		dev_warn(hba->dev, "No UFSHPB LU to init\n");
++		ret = -ENODEV;
++		goto out_free_mem;
++	}
++
++	INIT_WORK(&hba->ufshpb_eh_work, ufshpb_error_handler);
++	hba->ufshpb_state = HPB_PRESENT;
++	hba->issue_ioctl = false;
++
++	for (lun = 0; lun < UFS_UPIU_MAX_GENERAL_LUN; lun++)
++		if (hba->ufshpb_lup[lun])
++			dev_info(hba->dev, "UFSHPB LU %d working\n", lun);
++
++	return 0;
++out_free_mem:
++	for (i = 0; i < UFS_UPIU_MAX_GENERAL_LUN; i++)
++		kfree(hba->ufshpb_lup[i]);
++out_state:
++	hba->ufshpb_state = HPB_NOT_SUPPORTED;
++	return ret;
++}
++
++static void ufshpb_map_loading_trigger(struct ufshpb_lu *hpb,
++				       bool dirty, bool only_pinned)
++{
++	int region, subregion;
++	bool do_work_handler = false;
++
++	for (region = 0; region < hpb->regions_per_lu; region++) {
++		struct ufshpb_region *cb;
++
++		cb = hpb->region_tbl + region;
++
++		if (cb->region_state == HPBREGION_ACTIVE ||
++		    cb->region_state == HPBREGION_PINNED) {
++			SYSFS_INFO("add active block number %d state %d",
++				   region, cb->region_state);
++			if ((only_pinned && cb->region_state == HPBREGION_PINNED) ||
++			    !only_pinned) {
++				spin_lock_bh(&hpb->hpb_lock);
++				for (subregion = 0; subregion < cb->subregion_count; subregion++)
++					ufshpb_add_subregion_to_req_list(hpb, cb->subregion_tbl + subregion);
++
++				spin_unlock_bh(&hpb->hpb_lock);
++				do_work_handler = true;
++			}
++
++			if (dirty) {
++				for (subregion = 0; subregion < cb->subregion_count; subregion++)
++					cb->subregion_tbl[subregion].subregion_state = HPBSUBREGION_DIRTY;
++			}
++
++		}
++	}
++
++	if (do_work_handler)
++		schedule_work(&hpb->ufshpb_work);
++}
++
++static void ufshpb_purge_active_block(struct ufshpb_lu *hpb)
++{
++	int region, subregion;
++	int state;
++	struct ufshpb_region *cb;
++	struct ufshpb_subregion *cp;
++
++	spin_lock_bh(&hpb->hpb_lock);
++	for (region = 0; region < hpb->regions_per_lu; region++) {
++		cb = hpb->region_tbl + region;
++
++		if (cb->region_state == HPBREGION_INACTIVE) {
++			HPB_DEBUG(hpb, "region %d inactive", region);
++			continue;
++		}
++
++		if (cb->region_state == HPBREGION_PINNED) {
++			state = HPBSUBREGION_DIRTY;
++		} else if (cb->region_state == HPBREGION_ACTIVE) {
++			state = HPBSUBREGION_UNUSED;
++			ufshpb_cleanup_lru_info(&hpb->lru_info, cb);
++		} else {
++			HPB_DEBUG(hpb, "Unsupported state of region");
++			continue;
++		}
++
++
++		HPB_DEBUG(hpb, "region %d state %d dft %d", region, state,
++			  hpb->debug_free_table);
++		for (subregion = 0; subregion < cb->subregion_count; subregion++) {
++			cp = cb->subregion_tbl + subregion;
++
++			ufshpb_purge_active_subregion(hpb, cp, state);
++		}
++		HPB_DEBUG(hpb, "region %d state %d dft %d", region, state,
++			  hpb->debug_free_table);
++	}
++	spin_unlock_bh(&hpb->hpb_lock);
++}
++
++static void ufshpb_retrieve_rsp_info(struct ufshpb_lu *hpb)
++{
++	struct ufshpb_rsp_info *rsp_info;
++	unsigned long flags;
++
++	while (1) {
++		spin_lock_irqsave(&hpb->rsp_list_lock, flags);
++		rsp_info = list_first_entry_or_null(&hpb->lh_rsp_info,
++						    struct ufshpb_rsp_info,
++						    list_rsp_info);
++		if (!rsp_info) {
++			spin_unlock_irqrestore(&hpb->rsp_list_lock, flags);
++			break;
++		}
++
++		HPB_DEBUG(hpb, "add_list %p -> %p", &hpb->lh_rsp_info_free,
++			  rsp_info);
++		list_move_tail(&rsp_info->list_rsp_info,
++			       &hpb->lh_rsp_info_free);
++
++		spin_unlock_irqrestore(&hpb->rsp_list_lock, flags);
++	}
++}
++
++static void ufshpb_probe(struct ufs_hba *hba)
++{
++	struct ufshpb_lu *hpb;
++	int lu;
++
++	for (lu = 0; lu < UFS_UPIU_MAX_GENERAL_LUN; lu++) {
++		hpb = hba->ufshpb_lup[lu];
++		if (hpb && hpb->lu_hpb_enable) {
++			dev_info(hba->dev, "UFSHPB lun %d reset\n", lu);
++
++			ufshpb_cancel_jobs(hpb);
++
++			ufshpb_retrieve_rsp_info(hpb);
++
++			ufshpb_purge_active_block(hpb);
++
++			tasklet_init(&hpb->ufshpb_tasklet, ufshpb_tasklet_fn,
++				     (unsigned long)hpb);
++		}
++	}
++
++	hba->ufshpb_state = HPB_PRESENT;
++}
++
++static void ufshpb_destroy_subregion_tbl(struct ufshpb_lu *hpb,
++					 struct ufshpb_region *cb)
++{
++	int subregion;
++
++	for (subregion = 0; subregion < cb->subregion_count; subregion++) {
++		struct ufshpb_subregion *cp;
++
++		cp = cb->subregion_tbl + subregion;
++
++		RELEASE_INFO("cp %d %p state %d mctx %p",
++			     subregion, cp, cp->subregion_state, cp->mctx);
++
++		cp->subregion_state = HPBSUBREGION_UNUSED;
++
++		ufshpb_put_map_ctx(hpb, cp->mctx);
++	}
++
++	kfree(cb->subregion_tbl);
++}
++
++static void ufshpb_destroy_region_tbl(struct ufshpb_lu *hpb)
++{
++	int region;
++
++	for (region = 0; region < hpb->regions_per_lu; region++) {
++		struct ufshpb_region *cb;
++
++		cb = hpb->region_tbl + region;
++		RELEASE_INFO("region %d %p state %d", region, cb,
++			     cb->region_state);
++
++		if (cb->region_state == HPBREGION_PINNED ||
++		    cb->region_state == HPBREGION_ACTIVE) {
++			cb->region_state = HPBREGION_INACTIVE;
++
++			ufshpb_destroy_subregion_tbl(hpb, cb);
++		}
++	}
++
++	ufshpb_table_mempool_remove(hpb);
++	kfree(hpb->region_tbl);
++}
++
++void ufshpb_release(struct ufs_hba *hba, int state)
++{
++	int lun;
++
++	RELEASE_INFO("start release");
++	hba->ufshpb_state = HPB_FAILED;
++
++	for (lun = 0; lun < UFS_UPIU_MAX_GENERAL_LUN; lun++) {
++		struct ufshpb_lu *hpb = hba->ufshpb_lup[lun];
++
++		RELEASE_INFO("lun %d %p", lun, hpb);
++
++		hba->ufshpb_lup[lun] = NULL;
++
++		if (!hpb)
++			continue;
++
++		if (!hpb->lu_hpb_enable)
++			continue;
++
++		hpb->lu_hpb_enable = false;
++
++		ufshpb_cancel_jobs(hpb);
++
++		ufshpb_destroy_region_tbl(hpb);
++
++		ufshpb_req_mempool_remove(hpb);
++
++		kobject_uevent(&hpb->kobj, KOBJ_REMOVE);
++		kobject_del(&hpb->kobj);
++
++		kfree(hpb);
++	}
++
++	if (alloc_mctx != 0)
++		WARNING_MSG("warning: alloc_mctx %d", alloc_mctx);
++
++	hba->ufshpb_state = state;
++}
++
++void ufshpb_init_handler(struct work_struct *work)
++{
++	struct ufs_hba *hba;
++	struct delayed_work *dwork = to_delayed_work(work);
++	int err;
++#if defined(CONFIG_SCSI_SCAN_ASYNC)
++	unsigned long flags;
++#endif
++
++	INIT_INFO("INIT Handler called");
++	hba = container_of(dwork, struct ufs_hba, ufshpb_init_work);
++
++#if defined(CONFIG_SCSI_SCAN_ASYNC)
++	mutex_lock(&hba->host->scan_mutex);
++	spin_lock_irqsave(hba->host->host_lock, flags);
++	if (hba->host->async_scan == 1) {
++		spin_unlock_irqrestore(hba->host->host_lock, flags);
++		mutex_unlock(&hba->host->scan_mutex);
++		INIT_INFO("Not set scsi-device-info. So re-sched.");
++		schedule_delayed_work(&hba->ufshpb_init_work,
++				      msecs_to_jiffies(100));
++		return;
++	}
++	spin_unlock_irqrestore(hba->host->host_lock, flags);
++	mutex_unlock(&hba->host->scan_mutex);
++#endif
++
++	if (hba->ufshpb_state == HPB_NEED_INIT) {
++		INIT_INFO("HPB_INIT_START");
++		err = ufshpb_init(hba);
++		if (err) {
++			dev_warn(hba->dev, "UFSHPB driver init failed - "
++				 "UFSHCD will run without UFSHPB\n");
++			dev_warn(hba->dev, "UFSHPB error num : %d\n", err);
++		}
++	} else if (hba->ufshpb_state == HPB_RESET) {
++		ufshpb_probe(hba);
++	}
++}
++
++static void ufshpb_error_handler(struct work_struct *work)
++{
++	struct ufs_hba *hba;
++
++	hba = container_of(work, struct ufs_hba, ufshpb_eh_work);
++
++	dev_warn(hba->dev, "UFSHPB driver has failed - "
++		 "but UFSHCD can run without UFSHPB\n");
++	dev_warn(hba->dev, "UFSHPB will be removed from the kernel\n");
++
++	ufshpb_release(hba, HPB_FAILED);
++}
++
++static void ufshpb_stat_init(struct ufshpb_lu *hpb)
++{
++	atomic64_set(&hpb->hit, 0);
++	atomic64_set(&hpb->miss, 0);
++	atomic64_set(&hpb->region_miss, 0);
++	atomic64_set(&hpb->subregion_miss, 0);
++	atomic64_set(&hpb->entry_dirty_miss, 0);
++	atomic64_set(&hpb->rb_noti_cnt, 0);
++	atomic64_set(&hpb->map_req_cnt, 0);
++	atomic64_set(&hpb->region_evict, 0);
++	atomic64_set(&hpb->region_add, 0);
++	atomic64_set(&hpb->rb_fail, 0);
++}
++
++static ssize_t ufshpb_sysfs_debug_release_store(struct ufshpb_lu *hpb,
++						const char *buf, size_t count)
++{
++	unsigned long value;
++
++	SYSFS_INFO("start release function");
++
++	if (kstrtoul(buf, 0, &value)) {
++		ERR_MSG("kstrtoul error");
++		return -EINVAL;
++	}
++
++	if (value == 0xab) {
++		SYSFS_INFO("magic number %lu release start", value);
++		goto err_out;
++	} else {
++		SYSFS_INFO("wrong magic number %lu", value);
++	}
++
++	return count;
++err_out:
++	hpb->hba->ufshpb_state = HPB_FAILED;
++	schedule_work(&hpb->hba->ufshpb_eh_work);
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_info_lba_store(struct ufshpb_lu *hpb,
++					   const char *buf, size_t count)
++{
++	unsigned long long ppn;
++	unsigned long value;
++	unsigned int lpn;
++	int region, subregion, subregion_offset;
++	struct ufshpb_region *cb;
++	struct ufshpb_subregion *cp;
++	int dirty;
++
++	if (kstrtoul(buf, 0, &value)) {
++		ERR_MSG("kstrtoul error");
++		return -EINVAL;
++	}
++
++	if (value > hpb->lu_num_blocks * SECTORS_PER_BLOCK) {
++		ERR_MSG("value %lu > lu_num_blocks %d error",
++			value, hpb->lu_num_blocks);
++		return -EINVAL;
++	}
++	lpn = value / SECTORS_PER_BLOCK;
++
++	ufshpb_get_pos_from_lpn(hpb, lpn, &region, &subregion,
++				&subregion_offset);
++
++	cb = hpb->region_tbl + region;
++	cp = cb->subregion_tbl + subregion;
++
++	if (cb->region_state != HPBREGION_INACTIVE) {
++		ppn = ufshpb_get_ppn(cp->mctx, subregion_offset);
++		spin_lock_bh(&hpb->hpb_lock);
++		dirty = ufshpb_ppn_dirty_check(hpb, cp, subregion_offset);
++		spin_unlock_bh(&hpb->hpb_lock);
++	} else {
++		ppn = 0;
++		dirty = -1;
++	}
++
++	SYSFS_INFO("sector %lu region %d state %d subregion %d state %d",
++		   value, region, cb->region_state, subregion,
++		   cp->subregion_state);
++	SYSFS_INFO("sector %lu lpn %u ppn %llx dirty %d",
++		   value, lpn, ppn, dirty);
++	TMSG(hpb, "%s:%d sector %lu lpn %u ppn %llx dirty %d",
++	     __func__, __LINE__, value, lpn, ppn, dirty);
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_map_req_show(struct ufshpb_lu *hpb, char *buf)
++{
++	long long rb_noti_cnt, map_req_cnt;
++
++	rb_noti_cnt = atomic64_read(&hpb->rb_noti_cnt);
++	map_req_cnt = atomic64_read(&hpb->map_req_cnt);
++
++	SYSFS_INFO("rb_noti conunt %lld map_req count %lld",
++		   rb_noti_cnt, map_req_cnt);
++
++	return snprintf(buf, PAGE_SIZE,
++			"rb_noti conunt %lld map_req count %lld\n",
++			rb_noti_cnt, map_req_cnt);
++}
++
++static ssize_t ufshpb_sysfs_count_reset_store(struct ufshpb_lu *hpb,
++					      const char *buf, size_t count)
++{
++	unsigned long debug;
++
++	if (kstrtoul(buf, 0, &debug))
++		return -EINVAL;
++
++	ufshpb_stat_init(hpb);
++
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_add_evict_show(struct ufshpb_lu *hpb, char *buf)
++{
++	long long add, evict;
++
++	add = atomic64_read(&hpb->region_add);
++	evict = atomic64_read(&hpb->region_evict);
++
++	SYSFS_INFO("add %lld evict %lld", add, evict);
++
++	return snprintf(buf, PAGE_SIZE, "add %lld evict %lld\n", add, evict);
++}
++
++static ssize_t ufshpb_sysfs_hit_show(struct ufshpb_lu *hpb, char *buf)
++{
++	long long hit;
++
++	hit = atomic64_read(&hpb->hit);
++
++	SYSFS_INFO("hit %lld", hit);
++
++	return snprintf(buf, PAGE_SIZE, "%lld\n", hit);
++}
++
++static ssize_t ufshpb_sysfs_miss_show(struct ufshpb_lu *hpb, char *buf)
++{
++	long long region_miss, subregion_miss, entry_dirty_miss, rb_fail;
++
++	region_miss = atomic64_read(&hpb->region_miss);
++	subregion_miss = atomic64_read(&hpb->subregion_miss);
++	entry_dirty_miss = atomic64_read(&hpb->entry_dirty_miss);
++	rb_fail = atomic64_read(&hpb->rb_fail);
++
++	SYSFS_INFO("Total : %lld, region_miss %lld, subregion_miss %lld, "
++		   "entry_dirty_miss %lld, rb_fail %lld",
++		   region_miss + subregion_miss + entry_dirty_miss,
++		   region_miss, subregion_miss, entry_dirty_miss, rb_fail);
++
++	return snprintf(buf, PAGE_SIZE,	"Total: %lld, region %lld "
++			"subregion %lld entry %lld rb_fail %lld\n",
++			region_miss + subregion_miss + entry_dirty_miss,
++			region_miss, subregion_miss, entry_dirty_miss, rb_fail);
++}
++
++static ssize_t ufshpb_sysfs_version_show(struct ufshpb_lu *hpb, char *buf)
++{
++	SYSFS_INFO("HPB version %.2x %.2x, D/D version %.2x %.2x\n",
++		   GET_BYTE_1(hpb->hpb_ver), GET_BYTE_0(hpb->hpb_ver),
++		   GET_BYTE_1(UFSHPB_DD_VER), GET_BYTE_0(UFSHPB_DD_VER));
++
++	return snprintf(buf, PAGE_SIZE,
++			"HPB version %.2x %.2x, D/D version %.2x %.2x\n",
++			GET_BYTE_1(hpb->hpb_ver), GET_BYTE_0(hpb->hpb_ver),
++			GET_BYTE_1(UFSHPB_DD_VER), GET_BYTE_0(UFSHPB_DD_VER));
++}
++
++static ssize_t ufshpb_sysfs_active_list_show(struct ufshpb_lu *hpb, char *buf)
++{
++	int ret = 0, count = 0;
++	struct ufshpb_region *region;
++
++	list_for_each_entry(region, &hpb->lru_info.lru, list_region) {
++		ret = sprintf(buf + count, "%d(cnt=%d) ",
++			      region->region, region->hit_count);
++		count += ret;
++	}
++	ret = sprintf(buf + count, "\n");
++	count += ret;
++
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_active_block_status_show(struct ufshpb_lu *hpb,
++						     char *buf)
++{
++	int ret = 0, count = 0, region;
++
++	ret = sprintf(buf, "PINNED=%d ACTIVE=%d INACTIVE=%d\n",
++		      HPBREGION_PINNED, HPBREGION_ACTIVE, HPBREGION_INACTIVE);
++	count = ret;
++
++	for (region = 0; region < hpb->regions_per_lu; region++) {
++		ret = sprintf(buf + count, "%d:%d ", region,
++			      hpb->region_tbl[region].region_state);
++		count += ret;
++	}
++
++	ret = sprintf(buf + count, "\n");
++	count += ret;
++
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_subregion_status_show(struct ufshpb_lu *hpb,
++						  char *buf)
++{
++	int ret = 0, count = 0, region, sub;
++
++	ret = sprintf(buf, "PINNED=%d ACTIVE=%d INACTIVE=%d\n",
++		      HPBREGION_PINNED, HPBREGION_ACTIVE, HPBREGION_INACTIVE);
++	count = ret;
++
++	for (region = 0; region < hpb->regions_per_lu; region++) {
++		ret = sprintf(buf + count, "%d:%d ", region,
++			      hpb->region_tbl[region].region_state);
++		printk(KERN_ERR "\nregion %d state %d\n", region,
++		       hpb->region_tbl[region].region_state);
++
++		for (sub = 0; sub < hpb->region_tbl[region].subregion_count;
++		     sub++) {
++			printk(KERN_ERR "region %d subregion %d state %d\n",
++			       region, hpb->region_tbl[region].region_state,
++			       hpb->region_tbl[region].subregion_tbl[sub].
++			       subregion_state);
++		}
++		count += ret;
++	}
++
++	ret = sprintf(buf + count, "\n");
++	count += ret;
++
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_debug_store(struct ufshpb_lu *hpb,
++					const char *buf, size_t count)
++{
++	unsigned long debug;
++
++	if (kstrtoul(buf, 0, &debug))
++		return -EINVAL;
++
++	if (debug >= 1)
++		hpb->debug = 1;
++	else
++		hpb->debug = 0;
++
++	SYSFS_INFO("debug %d", hpb->debug);
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_debug_show(struct ufshpb_lu *hpb, char *buf)
++{
++	SYSFS_INFO("debug %d", hpb->debug);
++
++	return snprintf(buf, PAGE_SIZE, "%d\n",	hpb->debug);
++}
++
++static ssize_t ufshpb_sysfs_map_loading_store(struct ufshpb_lu *hpb,
++					      const char *buf, size_t count)
++{
++	unsigned long value;
++
++	SYSFS_INFO("");
++
++	if (kstrtoul(buf, 0, &value))
++		return -EINVAL;
++
++	if (value > 1)
++		return -EINVAL;
++
++	SYSFS_INFO("value %lu", value);
++
++	if (value == 1)
++		ufshpb_map_loading_trigger(hpb, false, false);
++
++	return count;
++
++}
++
++static ssize_t ufshpb_sysfs_map_disable_show(struct ufshpb_lu *hpb, char *buf)
++{
++	return snprintf(buf, PAGE_SIZE,
++			">> force_map_req_disable: %d\n",
++			hpb->force_map_req_disable);
++}
++
++static ssize_t ufshpb_sysfs_map_disable_store(struct ufshpb_lu *hpb,
++					      const char *buf, size_t count)
++{
++	unsigned long value;
++
++	if (kstrtoul(buf, 0, &value))
++		return -EINVAL;
++
++	if (value > 1)
++		value = 1;
++
++	if (value == 1)
++		hpb->force_map_req_disable = true;
++	else if (value == 0)
++		hpb->force_map_req_disable = false;
++	else
++		ERR_MSG("error value: %lu", value);
++
++	SYSFS_INFO("force_map_req_disable: %d", hpb->force_map_req_disable);
++
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_disable_show(struct ufshpb_lu *hpb, char *buf)
++{
++	return snprintf(buf, PAGE_SIZE,
++			">> force_disable: %d\n", hpb->force_disable);
++}
++
++static ssize_t ufshpb_sysfs_disable_store(struct ufshpb_lu *hpb,
++					  const char *buf, size_t count)
++{
++	unsigned long value;
++
++	if (kstrtoul(buf, 0, &value))
++		return -EINVAL;
++
++	if (value > 1)
++		value = 1;
++
++	if (value == 1)
++		hpb->force_disable = true;
++	else if (value == 0)
++		hpb->force_disable = false;
++	else
++		ERR_MSG("error value: %lu", value);
++
++	SYSFS_INFO("force_disable: %d", hpb->force_disable);
++
++	return count;
++}
++
++static int global_region;
++
++static inline bool is_region_active(struct ufshpb_lu *hpb, int region)
++{
++	if (hpb->region_tbl[region].region_state == HPBREGION_ACTIVE ||
++	    hpb->region_tbl[region].region_state == HPBREGION_PINNED)
++		return true;
++
++	return false;
++}
++
++static ssize_t ufshpb_sysfs_active_group_store(struct ufshpb_lu *hpb,
++					       const char *buf, size_t count)
++{
++	unsigned long block;
++	int region;
++
++	if (kstrtoul(buf, 0, &block))
++		return -EINVAL;
++
++	region = block >> hpb->entries_per_region_shift;
++	if (region >= hpb->regions_per_lu) {
++		ERR_MSG("error region %d max %d", region, hpb->regions_per_lu);
++		region = hpb->regions_per_lu - 1;
++	}
++
++	global_region = region;
++
++	SYSFS_INFO("block %lu region %d active %d",
++		   block, region, is_region_active(hpb, region));
++
++	return count;
++}
++
++static ssize_t ufshpb_sysfs_active_group_show(struct ufshpb_lu *hpb, char *buf)
++{
++	SYSFS_INFO("region %d active %d",
++		   global_region, is_region_active(hpb, global_region));
++
++	return snprintf(buf, PAGE_SIZE,
++			"%d\n",	is_region_active(hpb, global_region));
++}
++
++static struct ufshpb_sysfs_entry ufshpb_sysfs_entries[] = {
++	__ATTR(is_active_group, S_IRUGO | S_IWUSR,
++	       ufshpb_sysfs_active_group_show, ufshpb_sysfs_active_group_store),
++	__ATTR(read_16_disable, S_IRUGO | S_IWUSR,
++	       ufshpb_sysfs_disable_show, ufshpb_sysfs_disable_store),
++	__ATTR(map_cmd_disable, S_IRUGO | S_IWUSR,
++	       ufshpb_sysfs_map_disable_show, ufshpb_sysfs_map_disable_store),
++	__ATTR(map_loading, S_IWUSR, NULL, ufshpb_sysfs_map_loading_store),
++	__ATTR(debug, S_IRUGO | S_IWUSR,
++	       ufshpb_sysfs_debug_show, ufshpb_sysfs_debug_store),
++	__ATTR(active_block_status, S_IRUGO,
++	       ufshpb_sysfs_active_block_status_show, NULL),
++	__ATTR(subregion_status, S_IRUGO,
++	       ufshpb_sysfs_subregion_status_show, NULL),
++	__ATTR(HPBVersion, S_IRUGO, ufshpb_sysfs_version_show, NULL),
++	__ATTR(hit_count, S_IRUGO, ufshpb_sysfs_hit_show, NULL),
++	__ATTR(miss_count, S_IRUGO, ufshpb_sysfs_miss_show, NULL),
++	__ATTR(active_list, S_IRUGO, ufshpb_sysfs_active_list_show, NULL),
++	__ATTR(add_evict_count, S_IRUGO, ufshpb_sysfs_add_evict_show, NULL),
++	__ATTR(count_reset, S_IWUSR, NULL, ufshpb_sysfs_count_reset_store),
++	__ATTR(map_req_count, S_IRUGO, ufshpb_sysfs_map_req_show, NULL),
++	__ATTR(get_info_from_lba, S_IWUSR, NULL, ufshpb_sysfs_info_lba_store),
++	__ATTR(release, S_IWUSR, NULL, ufshpb_sysfs_debug_release_store),
++	__ATTR_NULL
++};
++
++static ssize_t ufshpb_attr_show(struct kobject *kobj, struct attribute *attr,
++				char *page)
++{
++	struct ufshpb_sysfs_entry *entry;
++	struct ufshpb_lu *hpb;
++	ssize_t error;
++
++	entry = container_of(attr, struct ufshpb_sysfs_entry, attr);
++	hpb = container_of(kobj, struct ufshpb_lu, kobj);
++
++	if (!entry->show)
++		return -EIO;
++
++	mutex_lock(&hpb->sysfs_lock);
++	error = entry->show(hpb, page);
++	mutex_unlock(&hpb->sysfs_lock);
++	return error;
++}
++
++static ssize_t ufshpb_attr_store(struct kobject *kobj, struct attribute *attr,
++				 const char *page, size_t length)
++{
++	struct ufshpb_sysfs_entry *entry;
++	struct ufshpb_lu *hpb;
++	ssize_t error;
++
++	entry = container_of(attr, struct ufshpb_sysfs_entry, attr);
++	hpb = container_of(kobj, struct ufshpb_lu, kobj);
++
++	if (!entry->store)
++		return -EIO;
++
++	mutex_lock(&hpb->sysfs_lock);
++	error = entry->store(hpb, page, length);
++	mutex_unlock(&hpb->sysfs_lock);
++	return error;
++}
++
++static const struct sysfs_ops ufshpb_sysfs_ops = {
++	.show = ufshpb_attr_show,
++	.store = ufshpb_attr_store,
++};
++
++static struct kobj_type ufshpb_ktype = {
++	.sysfs_ops = &ufshpb_sysfs_ops,
++	.release = NULL,
++};
++
++static int ufshpb_create_sysfs(struct ufs_hba *hba, struct ufshpb_lu *hpb)
++{
++	struct device *dev = hba->dev;
++	struct ufshpb_sysfs_entry *entry;
++	int err;
++
++	hpb->sysfs_entries = ufshpb_sysfs_entries;
++
++	ufshpb_stat_init(hpb);
++
++	kobject_init(&hpb->kobj, &ufshpb_ktype);
++	mutex_init(&hpb->sysfs_lock);
++
++	INIT_INFO("ufshpb creates sysfs ufshpb_lu %d %p dev->kobj %p",
++		  hpb->lun, &hpb->kobj, &dev->kobj);
++
++	err = kobject_add(&hpb->kobj, kobject_get(&dev->kobj),
++			  "ufshpb_lu%d", hpb->lun);
++	if (!err) {
++		for (entry = hpb->sysfs_entries; entry->attr.name != NULL;
++		     entry++) {
++			INIT_INFO("ufshpb_lu%d sysfs attr creates: %s",
++				  hpb->lun, entry->attr.name);
++			if (sysfs_create_file(&hpb->kobj, &entry->attr))
++				break;
++		}
++		INIT_INFO("ufshpb_lu%d sysfs adds uevent", hpb->lun);
++		kobject_uevent(&hpb->kobj, KOBJ_ADD);
++	}
++
++	return err;
++}
+diff -urN iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufshpb.h iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufshpb.h
+--- iu_board_exynos_legacy/iu_board_exynos/drivers/scsi/ufs/ufshpb.h	1970-01-01 09:00:00.000000000 +0900
++++ iu_board_exynos_DDv1.3.5/iu_board_exynos/drivers/scsi/ufs/ufshpb.h	2018-06-27 16:55:41.805891896 +0900
+@@ -0,0 +1,367 @@
++/*
++ * Universal Flash Storage Host Performance Booster
++ *
++ * Copyright (C) 2017-2018 Samsung Electronics Co., Ltd.
++ *
++ * Authors:
++ *	Yongmyung Lee <ymhungry.lee@samsung.com>
++ *	Jinyoung Choi <j-young.choi@samsung.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ * See the COPYING file in the top-level directory or visit
++ * <http://www.gnu.org/licenses/gpl-2.0.html>
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * This program is provided "AS IS" and "WITH ALL FAULTS" and
++ * without warranty of any kind. You are solely responsible for
++ * determining the appropriateness of using and distributing
++ * the program and assume all risks associated with your exercise
++ * of rights with respect to the program, including but not limited
++ * to infringement of third party rights, the risks and costs of
++ * program errors, damage to or loss of data, programs or equipment,
++ * and unavailability or interruption of operations. Under no
++ * circumstances will the contributor of this Program be liable for
++ * any damages of any kind arising from your use or distribution of
++ * this program.
++ *
++ * The Linux Foundation chooses to take subject only to the GPLv2
++ * license terms, and distributes only under these terms.
++ */
++
++#ifndef _UFSHPB_H_
++#define _UFSHPB_H_
++
++#include <linux/spinlock.h>
++#include <linux/circ_buf.h>
++#include <linux/workqueue.h>
++
++/* Version info*/
++#define UFSHPB_VER					0x0103
++#define UFSHPB_DD_VER					0x0135
++
++/* Constant value*/
++#define SECTOR 						512
++#define BLOCK						4096
++#define SECTORS_PER_BLOCK 				(BLOCK / SECTOR)
++#define BITS_PER_DWORD 					32
++#define MAX_MAP_REQ					16
++#define MAX_ACTIVE_NUM					2
++#define MAX_INACTIVE_NUM				2
++
++#define HPB_ENTRY_SIZE					0x08
++#define OS_PAGE_SIZE					4096
++#define HPB_ENTREIS_PER_OS_PAGE				(OS_PAGE_SIZE / HPB_ENTRY_SIZE)
++#define IOCTL_DEV_CTX_MAX_SIZE				OS_PAGE_SIZE
++#define OS_PAGE_SHIFT					12
++
++/* Description */
++#define UFS_FEATURE_SUPPORT_HPB_BIT 			0x80
++#define UFSHPB_QUERY_DESC_DEVICE_MAX_SIZE		0x48
++#define UFSHPB_QUERY_DESC_CONFIGURAION_MAX_SIZE		0xD0
++#define UFSHPB_QUERY_DESC_UNIT_MAX_SIZE			0x2C
++#define UFSHPB_QUERY_DESC_GEOMETRY_MAX_SIZE		0x50
++
++/* Response UPIU types */
++#define HPB_RSP_NONE					0x00
++#define HPB_RSP_REQ_REGION_UPDATE			0x01
++#define PER_ACTIVE_INFO_BYTES				4
++#define PER_INACTIVE_INFO_BYTES				2
++
++/* Vender defined OPCODE */
++#define UFSHPB_READ_BUFFER				0xF9
++
++#define DEV_DATA_SEG_LEN				0x14
++#define DEV_SENSE_SEG_LEN				0x12
++#define DEV_DES_TYPE					0x80
++#define DEV_ADDITIONAL_LEN				0x11
++
++/* BYTE SHIFT */
++#define ZERO_BYTE_SHIFT					0
++#define ONE_BYTE_SHIFT					8
++#define TWO_BYTE_SHIFT					16
++#define THREE_BYTE_SHIFT				24
++#define FOUR_BYTE_SHIFT					32
++#define FIVE_BYTE_SHIFT					40
++#define SIX_BYTE_SHIFT					48
++#define SEVEN_BYTE_SHIFT				56
++
++#define SHIFT_BYTE_0(num)		((num) << ZERO_BYTE_SHIFT)
++#define SHIFT_BYTE_1(num)		((num) << ONE_BYTE_SHIFT)
++#define SHIFT_BYTE_2(num)		((num) << TWO_BYTE_SHIFT)
++#define SHIFT_BYTE_3(num)		((num) << THREE_BYTE_SHIFT)
++#define SHIFT_BYTE_4(num)		((num) << FOUR_BYTE_SHIFT)
++#define SHIFT_BYTE_5(num)		((num) << FIVE_BYTE_SHIFT)
++#define SHIFT_BYTE_6(num)		((num) << SIX_BYTE_SHIFT)
++#define SHIFT_BYTE_7(num)		((num) << SEVEN_BYTE_SHIFT)
++
++#define GET_BYTE_0(num)			(((num) >> ZERO_BYTE_SHIFT) & 0xff)
++#define GET_BYTE_1(num)			(((num) >> ONE_BYTE_SHIFT) & 0xff)
++#define GET_BYTE_2(num)			(((num) >> TWO_BYTE_SHIFT) & 0xff)
++#define GET_BYTE_3(num)			(((num) >> THREE_BYTE_SHIFT) & 0xff)
++#define GET_BYTE_4(num)			(((num) >> FOUR_BYTE_SHIFT) & 0xff)
++#define GET_BYTE_5(num)			(((num) >> FIVE_BYTE_SHIFT) & 0xff)
++#define GET_BYTE_6(num)			(((num) >> SIX_BYTE_SHIFT) & 0xff)
++#define GET_BYTE_7(num)			(((num) >> SEVEN_BYTE_SHIFT) & 0xff)
++
++#define REGION_UNIT_SIZE(bit_offset)		(0x01 << (bit_offset))
++
++enum UFSHPB_STATE {
++	HPB_PRESENT = 1,
++	HPB_NOT_SUPPORTED = -1,
++	HPB_FAILED = -2,
++	HPB_NEED_INIT = 0,
++	HPB_RESET = -3,
++};
++
++enum HPBREGION_STATE {
++	HPBREGION_INACTIVE, HPBREGION_ACTIVE, HPBREGION_PINNED,
++};
++
++enum HPBSUBREGION_STATE {
++	HPBSUBREGION_UNUSED, HPBSUBREGION_DIRTY, HPBSUBREGION_CLEAN, HPBSUBREGION_ISSUED,
++};
++
++struct ufshpb_func_desc {
++	/*** Device Descriptor ***/
++	/* 06h bNumberLU */
++	int lu_cnt;
++	/* 40h HPB Version */
++	u16 hpb_ver;
++
++	/*** Geometry Descriptor ***/
++	/* 48h bHPBRegionSize (UNIT: 512KB) */
++	u8 hpb_region_size;
++	/* 49h bHPBNumberLU */
++	u8 hpb_number_lu;
++	/* 4Ah bHPBSubRegionSize */
++	u8 hpb_subregion_size;
++	/* 4B:4Ch wDeviceMaxActiveHPBRegions */
++	u16 hpb_device_max_active_regions;
++};
++
++struct ufshpb_lu_desc {
++	/*** Unit Descriptor ****/
++	/* 03h bLUEnable */
++	int lu_enable;
++	/* 06h lu queue depth info*/
++	int lu_queue_depth;
++	/* 0Ah bLogicalBlockSize. default 0x0C = 4KB */
++	int lu_logblk_size;
++	/* 0Bh qLogicalBlockCount. same as the read_capacity ret val. */
++	u64 lu_logblk_cnt;
++
++	/* 23h:24h wLUMaxActiveHPBRegions */
++	u16 lu_max_active_hpb_regions;
++	/* 25h:26h wHPBPinnedRegionStartIdx */
++	u16 hpb_pinned_region_startidx;
++	/* 27h:28h wNumHPBPinnedRegions */
++	u16 lu_num_hpb_pinned_regions;
++
++
++	/* if 03h value is 02h, hpb_enable is set. */
++	bool lu_hpb_enable;
++
++	int lu_hpb_pinned_end_offset;
++};
++
++struct ufshpb_rsp_active_list {
++	u16 region[MAX_ACTIVE_NUM];
++	u16 subregion[MAX_ACTIVE_NUM];
++};
++
++struct ufshpb_rsp_inactive_list {
++	u16 region[MAX_INACTIVE_NUM];
++};
++
++struct ufshpb_rsp_update_entry {
++	unsigned int lpn;
++	unsigned long long ppn;
++};
++
++struct ufshpb_rsp_info {
++	int type;
++	int active_cnt;
++	int inactive_cnt;
++	struct ufshpb_rsp_active_list active_list;
++	struct ufshpb_rsp_inactive_list inactive_list;
++
++	__u64 rsp_start;
++	__u64 rsp_tasklet_enter;
++
++	struct list_head list_rsp_info;
++};
++
++struct ufshpb_rsp_field {
++	u8 sense_data_len[2];
++	u8 desc_type;
++	u8 additional_len;
++	u8 hpb_type;
++	u8 reserved;
++	u8 active_region_cnt;
++	u8 inactive_region_cnt;
++	u8 hpb_active_field[8];
++	u8 hpb_inactive_field[4];
++};
++
++struct ufshpb_map_ctx {
++	struct page **m_page;
++	unsigned int *ppn_dirty;
++
++	struct list_head list_table;
++};
++
++struct ufshpb_subregion {
++	struct ufshpb_map_ctx *mctx;
++	enum HPBSUBREGION_STATE subregion_state;
++	int region;
++	int subregion;
++
++	struct list_head list_subregion;
++};
++
++struct ufshpb_region {
++	struct ufshpb_subregion *subregion_tbl;
++	enum HPBREGION_STATE region_state;
++	int region;
++	int subregion_count;
++
++	/*below information is used by lru*/
++	struct list_head list_region;
++	int hit_count;
++};
++
++struct ufshpb_map_req {
++	struct ufshpb_lu *hpb;
++	struct ufshpb_map_ctx *mctx;
++	struct request req;
++	struct bio bio;
++#define MAX_BVEC_SIZE 128
++	struct bio_vec bvec[MAX_BVEC_SIZE];
++	void (*end_io)(struct request *rq, int err);
++	void *end_io_data;
++	int region;
++	int subregion;
++	int lun;
++	int retry_cnt;
++
++	/* for debug : RSP Profiling */
++	__u64 rsp_start; // get the request from device
++	__u64 rsp_tasklet_enter1; // tesklet sched time
++	__u64 rsp_issue; // issue scsi cmd
++	__u64 rsp_endio;
++	__u64 rsp_tasklet_enter2;
++	__u64 rsp_end;	 // complete the request
++
++	char sense[SCSI_SENSE_BUFFERSIZE];
++
++	struct list_head list_map_req;
++};
++
++enum selection_type{
++	LRU = 1,
++	LFU = 2,
++};
++
++struct victim_select_info {
++	int selection_type;
++	struct list_head lru;
++	int max_lru_active_cnt;	// supported hpb #region - pinned #region
++	atomic64_t active_cnt;
++};
++
++struct ufshpb_lu {
++	struct ufshpb_region *region_tbl;
++	struct ufshpb_rsp_info *rsp_info;
++	struct ufshpb_map_req *map_req;
++
++	struct list_head lh_map_ctx;
++	struct list_head lh_subregion_req;
++	struct list_head lh_rsp_info;
++
++	struct list_head lh_rsp_info_free;
++	struct list_head lh_map_req_free;
++	struct list_head lh_map_req_retry;
++	int debug_free_table;
++
++	bool lu_hpb_enable;
++
++	struct work_struct ufshpb_work;
++	struct delayed_work ufshpb_retry_work;
++	struct tasklet_struct ufshpb_tasklet;
++
++	int subregions_per_lu;
++	int regions_per_lu;
++	int subregion_mem_size;
++
++	/* for selecting victim */
++	struct victim_select_info lru_info;
++
++	int hpb_ver;
++	int lu_max_active_regions;
++
++	int entries_per_subregion;
++	int entries_per_subregion_shift;
++	int entries_per_subregion_mask;
++
++	int entries_per_region_shift;
++	int entries_per_region_mask;
++	int subregions_per_region;
++
++	int dwords_per_subregion;
++	unsigned long long subregion_unit_size;
++
++	int mpage_bytes;
++	int mpages_per_subregion;
++
++	/* for debug constant variables */
++	int lu_num_blocks;
++
++	int lun;
++
++	struct ufs_hba *hba;
++
++	spinlock_t hpb_lock;
++	spinlock_t rsp_list_lock;
++
++	struct kobject kobj;
++	struct mutex sysfs_lock;
++	struct ufshpb_sysfs_entry *sysfs_entries;
++
++	/* for debug */
++	bool force_disable;
++	bool force_map_req_disable;
++	bool debug;
++	bool read_buf_debug;
++	atomic64_t hit;
++	atomic64_t miss;
++	atomic64_t region_miss;
++	atomic64_t subregion_miss;
++	atomic64_t entry_dirty_miss;
++	atomic64_t rb_noti_cnt;
++	atomic64_t map_req_cnt;
++	atomic64_t region_add;
++	atomic64_t region_evict;
++	atomic64_t rb_fail;
++};
++
++struct ufshpb_sysfs_entry {
++	struct attribute    attr;
++	ssize_t (*show)(struct ufshpb_lu *hpb, char *buf);
++	ssize_t (*store)(struct ufshpb_lu *hpb, const char *, size_t);
++};
++
++struct ufshcd_lrb;
++
++void ufshpb_init_handler(struct work_struct *work);
++void ufshpb_prep_fn(struct ufs_hba *hba, struct ufshcd_lrb *lrbp);
++void ufshpb_rsp_upiu(struct ufs_hba *hba, struct ufshcd_lrb *lrbp);
++void ufshpb_release(struct ufs_hba *hba, int state);
++int ufshpb_issue_req_dev_ctx(struct ufshpb_lu *hpb, unsigned char *buf, int buf_length);
++#endif /* End of Header */
+diff -urN iu_board_exynos_legacy/iu_board_exynos/include/uapi/scsi/ufs/ioctl.h iu_board_exynos_DDv1.3.5/iu_board_exynos/include/uapi/scsi/ufs/ioctl.h
+--- iu_board_exynos_legacy/iu_board_exynos/include/uapi/scsi/ufs/ioctl.h	1970-01-01 09:00:00.000000000 +0900
++++ iu_board_exynos_DDv1.3.5/iu_board_exynos/include/uapi/scsi/ufs/ioctl.h	2018-06-27 16:55:41.805891896 +0900
+@@ -0,0 +1,57 @@
++#ifndef UAPI_UFS_IOCTL_H_
++#define UAPI_UFS_IOCTL_H_
++
++#include <linux/types.h>
++
++#define UFS_IOCTL_QUERY			0x5388
++
++#if defined(CONFIG_UFSHPB)
++#define HPB_QUERY_OPCODE		0x5500
++#endif
++
++/**
++ * struct ufs_ioctl_query_data - used to transfer data to and from user via ioctl
++ * @opcode: type of data to query (descriptor/attribute/flag)
++ * @idn: id of the data structure
++ * @buf_size: number of allocated bytes/data size on return
++ * @buffer: data location
++ *
++ * Received: buffer and buf_size (available space for transfered data)
++ * Submitted: opcode, idn, length, buf_size
++ */
++struct ufs_ioctl_query_data {
++	/*
++	 * User should select one of the opcode defined in "enum query_opcode".
++	 * Please check include/uapi/scsi/ufs/ufs.h for the definition of it.
++	 * Note that only UPIU_QUERY_OPCODE_READ_DESC,
++	 * UPIU_QUERY_OPCODE_READ_ATTR & UPIU_QUERY_OPCODE_READ_FLAG are
++	 * supported as of now. All other query_opcode would be considered
++	 * invalid.
++	 * As of now only read query operations are supported.
++	 */
++	__u32 opcode;
++	/*
++	 * User should select one of the idn from "enum flag_idn" or "enum
++	 * attr_idn" or "enum desc_idn" based on whether opcode above is
++	 * attribute, flag or descriptor.
++	 * Please check include/uapi/scsi/ufs/ufs.h for the definition of it.
++	 */
++	__u8 idn;
++	/*
++	 * User should specify the size of the buffer (buffer[0] below) where
++	 * it wants to read the query data (attribute/flag/descriptor).
++	 * As we might end up reading less data then what is specified in
++	 * buf_size. So we are updating buf_size to what exactly we have read.
++	 */
++	__u16 buf_size;
++	/*
++	 * placeholder for the start of the data buffer where kernel will copy
++	 * the query data (attribute/flag/descriptor) read from the UFS device
++	 * Note:
++	 * For Read Attribute you will have to allocate 4 bytes
++	 * For Read Flag you will have to allocate 1 byte
++	 */
++	__u8 buffer[0];
++};
++
++#endif /* UAPI_UFS_IOCTL_H_ */
